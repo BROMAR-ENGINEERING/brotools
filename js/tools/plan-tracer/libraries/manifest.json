@@ -1,0 +1,8 @@
+{
+  "libraries": [
+    "lighting",
+    "machines",
+    "building",
+    "pid"
+  ]
+}
