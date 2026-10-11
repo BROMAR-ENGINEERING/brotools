@@ -1,3 +1,4 @@
+/* Repo path: css/brotools.css */
 /* ============================================================
    BROTOOLS — HUB STYLES (uses shared.css tokens only)
    ============================================================ */
@@ -38,12 +39,18 @@
   flex-direction: column;
   min-height: 0;
 }
+/* When a tool is open the shell is exactly one screen tall, so the
+   tool container gets a definite height below the header. Tools
+   scroll inside their own container. */
+.bt-shell.bt-tool-active { height: 100vh; height: 100dvh; min-height: 0; }
+.bt-tool-active #view { overflow: hidden; }
 .bt-tool {            /* container a tool mounts into */
   flex: 1;
   display: flex;
   flex-direction: column;
   min-height: 0;
   position: relative;
+  overflow: auto;
 }
 
 /* Home tiles */
