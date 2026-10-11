@@ -1,18 +1,24 @@
+/* Repo path: js/app.js */
 /* ============================================================
    BROTOOLS — APP SHELL
    Router + header title + theme toggle.
    To add a tool: add one entry to TOOLS below.
+   Each tool lives in js/tools/<id>/ and its entry file exports
+   mount(container) and unmount(). Tools load their own CSS and
+   assets; set `css` only if a tool needs the hub to load it.
    ============================================================ */
 
 const TOOLS = [
   {
     id: 'pdf-toolkit',
+    entry: 'index.js',
     title: 'PDF Toolkit',
     desc: 'Split, combine, rotate, crop and watermark PDFs.',
     icon: '<path d="M14 6h26l12 12v40H14z"/><path d="M40 6v12h12"/><path d="M22 30h20M22 38h20M22 46h12"/>'
   },
   {
     id: 'plan-tracer',
+    entry: 'index.js',
     title: 'Plan Tracer',
     desc: 'Draw floor plans and P&ID diagrams.',
     icon: '<path d="M8 8h48v48H8z"/><path d="M8 30h22v26M30 30V8M30 22h26"/><path d="M30 40a10 10 0 0 1 10-10" stroke-dasharray="3 3"/>'
@@ -20,6 +26,7 @@ const TOOLS = [
 ];
 
 const view = document.getElementById('view');
+const shell = document.querySelector('.bt-shell');
 const titleEl = document.getElementById('pageTitle');
 
 let current = null;      // { module, cssLink }
@@ -61,6 +68,7 @@ function loadCss(href) {
 /* ── VIEWS ── */
 function renderHome() {
   setTitle('BroTools');
+  shell.classList.remove('bt-tool-active');
   view.className = 'page-content';
   view.innerHTML = `
     <nav class="bt-tiles" aria-label="Tools">
@@ -80,22 +88,23 @@ function renderStatus(html) {
 
 async function renderTool(tool, token) {
   setTitle(tool.title);
+  shell.classList.add('bt-tool-active');
   renderStatus('<div class="spinner"></div>');
 
-  const base = `js/tools/${tool.id}/${tool.id}`;
-  const cssLink = await loadCss(`${base}.css`);
+  const folder = `js/tools/${tool.id}/`;
+  const cssLink = tool.css ? await loadCss(folder + tool.css) : null;
   let mod;
   try {
-    mod = await import(`./tools/${tool.id}/${tool.id}.js`);
+    mod = await import(`./tools/${tool.id}/${tool.entry}`);
   } catch (err) {
-    cssLink.remove();
+    cssLink?.remove();
     if (token !== navToken) return;
     console.error(err);
     renderStatus(`<p>${tool.title} isn't installed yet.</p>
-      <p>Add <code>${base}.js</code> to the repo.</p>`);
+      <p>Add <code>${folder}${tool.entry}</code> to the repo.</p>`);
     return;
   }
-  if (token !== navToken) { cssLink.remove(); return; }
+  if (token !== navToken) { cssLink?.remove(); return; }
 
   view.className = '';
   view.innerHTML = '';
