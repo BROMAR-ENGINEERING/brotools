@@ -593,7 +593,7 @@ export function mount(container){
       if(s.type!=='symbol'||s.host?.id!==id) continue;
       const def=findSym(s.sym);
       if(!def?.cut) continue;
-      const hw=def.cut/2*s.scale;
+      const hw=def.cut/2*(s.sx??s.scale);          // gap follows the opening width
       (out[s.host.seg] ||= []).push([s.host.d-hw, s.host.d+hw]);
     }
     return out;
@@ -722,13 +722,17 @@ export function mount(container){
       const d=findSym(el.sym)||{svg:''};
       const q=symXY(el);
       const det = el.details?` data-details="${esc(el.details)}"`:'';
-      const sx = el.scale*(el.mirror?-1:1), sy = el.scale*(el.flip?-1:1);
+      // el.sx / el.sy override the uniform scale so an opening's width (along
+      // the wall) and wall thickness (across it) can be set independently
+      const bx=(el.sx??el.scale), by=(el.sy??el.scale);
+      const sx = bx*(el.mirror?-1:1), sy = by*(el.flip?-1:1);
+      const sw = 1.6/Math.max(bx,by)*(el.weight/2);     // keep stroke an even weight
       const lab = S.labels && el.showLabel && el.label;
       // mirroring lives on an inner group so the name never comes out backwards
       return `<g class="sym" data-id="${el.id}" data-label="${esc(el.label||d.name||'')}"${det}
         transform="translate(${q.x} ${q.y}) rotate(${q.rot})" color="${el.color}">
         <g transform="scale(${sx} ${sy})" stroke="currentColor" fill="none"
-           stroke-width="${1.6/el.scale*(el.weight/2)}" stroke-linecap="round" stroke-linejoin="round">
+           stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round">
           <rect x="-18" y="-18" width="36" height="36" fill="transparent" stroke="none"/>
           ${d.svg}
         </g>
@@ -752,7 +756,7 @@ export function mount(container){
       return {x:Math.min(...xs),y:Math.min(...ys),w:Math.max(...xs)-Math.min(...xs),h:Math.max(...ys)-Math.min(...ys)};}
     if(el.type==='rect') return {x:el.x,y:el.y,w:el.w,h:el.h};
     if(el.type==='circle') return {x:el.x-el.r,y:el.y-el.r,w:el.r*2,h:el.r*2};
-    if(el.type==='symbol'){const s=18*el.scale, q=symXY(el);return {x:q.x-s,y:q.y-s,w:s*2,h:s*2};}
+    if(el.type==='symbol'){const s=18*Math.max(el.sx??el.scale, el.sy??el.scale), q=symXY(el);return {x:q.x-s,y:q.y-s,w:s*2,h:s*2};}
     if(el.type==='text'){
       const lines=String(el.txt).split('\n');
       const cw=(el.font==='mono'?0.62:0.55)*(el.bold?1.05:1);
@@ -1686,9 +1690,19 @@ export function mount(container){
       h+=`<div class="muted" style="margin:-2px 0 8px">The name always shows in the popup, whether or not it's drawn.</div>
           <div class="h">Popup details</div>
           <textarea id="pDet" placeholder="e.g. 4000K &middot; 32W &middot; Circuit L3">${esc(el.details)}</textarea>
-          <div style="height:8px"></div>
-          <div class="row"><label>Size %</label><input type="range" id="pSc" min="20" max="600" value="${el.scale*100}">
-            <input class="num" id="pScN" type="number" min="20" max="600" step="5" value="${Math.round(el.scale*100)}" style="width:52px"></div>`;
+          <div style="height:8px"></div>`;
+      if(cuts){
+        // openings/doors/windows: width (along wall) and wall thickness are separate
+        const wPct=Math.round((el.sx??el.scale)*100), tPct=Math.round((el.sy??el.scale)*100);
+        h+=`<div class="row"><label>Width %</label><input type="range" id="pSx" min="20" max="600" value="${wPct}">
+              <input class="num" id="pSxN" type="number" min="20" max="600" step="5" value="${wPct}" style="width:52px"></div>
+            <div class="row"><label>Thickness</label><input type="range" id="pSy" min="20" max="600" value="${tPct}">
+              <input class="num" id="pSyN" type="number" min="20" max="600" step="5" value="${tPct}" style="width:52px"></div>
+            <div class="muted" style="margin:-2px 0 6px">Width sets the opening along the wall (and the gap it cuts); Thickness sets how far it reaches across the wall.</div>`;
+      } else {
+        h+=`<div class="row"><label>Size %</label><input type="range" id="pSc" min="20" max="600" value="${el.scale*100}">
+              <input class="num" id="pScN" type="number" min="20" max="600" step="5" value="${Math.round(el.scale*100)}" style="width:52px"></div>`;
+      }
       if(!hosted)
         h+=`<div class="row"><label>Angle</label>
               <input type="range" id="pRo" min="0" max="359" value="${el.rot}">
@@ -1762,6 +1776,10 @@ export function mount(container){
     };
     bind('#pLab',v=>el.label=v); bind('#pDet',v=>el.details=v);
     bind('#pSc',v=>{el.scale=v/100; S.symScale=el.scale; const n=$('#pScN'); if(n)n.value=Math.round(v);});
+    bind('#pSx',v=>{el.sx=(+v||100)/100; if(el.sy===undefined) el.sy=el.scale; const n=$('#pSxN'); if(n)n.value=Math.round(v);});
+    bind('#pSxN',v=>{el.sx=(+v||100)/100; if(el.sy===undefined) el.sy=el.scale; const n=$('#pSx'); if(n)n.value=Math.round(+v);});
+    bind('#pSy',v=>{el.sy=(+v||100)/100; if(el.sx===undefined) el.sx=el.scale; const n=$('#pSyN'); if(n)n.value=Math.round(v);});
+    bind('#pSyN',v=>{el.sy=(+v||100)/100; if(el.sx===undefined) el.sx=el.scale; const n=$('#pSy'); if(n)n.value=Math.round(+v);});
     bind('#pScN',v=>{el.scale=(+v||100)/100; S.symScale=el.scale; const n=$('#pSc'); if(n)n.value=+v;});
     bind('#pNx',v=>{el.nx=+v; const n=$('#pNxN'); if(n)n.value=+v;});
     bind('#pNy',v=>{el.ny=+v; const n=$('#pNyN'); if(n)n.value=+v;});
