@@ -113,7 +113,9 @@ export function mount(container){
     snapA:true, snapG:false, grid:false, ortho:false, guides:true, labels:true, gridSize:20,
     rad:20, dash:'solid', symScale:1,
     guideL:[],
-    els:[], bg:null, bgHidden:false, hideDrawing:false, textSize:16, draft:null, sel:[], snapHit:null, snapKind:null, joinA:null, dirty:false,
+    els:[], bg:null, bgHidden:false, hideDrawing:false,
+    textSize:16, textFont:'sans', textAlign:'start', textBold:false, textItalic:false,
+    draft:null, sel:[], snapHit:null, snapKind:null, joinA:null, dirty:false,
     viewLock:false, marquee:null, segSel:null,
     view:{x:0,y:0,w:PAPER_W,h:PAPER_H}, undo:[], redo:[]
   };
@@ -219,6 +221,9 @@ export function mount(container){
         bgEl=$('#bg'), gridEl=$('#grid'), paperEl=$('#paper');
   const uid = () => Math.random().toString(36).slice(2,9);
   const esc = s => String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const fontStack = f => f==='mono'  ? "'JetBrains Mono', monospace"
+                       : f==='serif' ? "Georgia, 'Times New Roman', serif"
+                       :               "'Outfit', sans-serif";
 
   /* =========================================================================
      TOOLBAR
@@ -692,10 +697,12 @@ export function mount(container){
       return `<circle data-id="${el.id}" cx="${el.x}" cy="${el.y}" r="${el.r}" ${st}/>`;
     if(el.type==='text'){
       const lines=String(el.txt).split('\n');
+      const anchor=el.align||'start';
       const spans=lines.map((ln,i)=>
         `<tspan x="${el.x}" dy="${i===0?0:el.size*1.25}">${esc(ln)||' '}</tspan>`).join('');
       return `<text data-id="${el.id}" x="${el.x}" y="${el.y}" fill="${el.color}" stroke="none"
-        font-size="${el.size}" font-family="Outfit, sans-serif">${spans}</text>`;
+        font-size="${el.size}" font-family="${fontStack(el.font)}" text-anchor="${anchor}"
+        font-weight="${el.bold?700:400}" font-style="${el.italic?'italic':'normal'}">${spans}</text>`;
     }
     if(el.type==='symbol'){
       const d=findSym(el.sym)||{svg:''};
@@ -711,10 +718,10 @@ export function mount(container){
           <rect x="-18" y="-18" width="36" height="36" fill="transparent" stroke="none"/>
           ${d.svg}
         </g>
-        ${(lab&&d.inner)?`<text x="0" y="${4*el.scale}" text-anchor="middle" font-size="${11*el.scale}"
+        ${(lab&&d.inner)?`<text x="0" y="${4*el.scale}" text-anchor="middle" font-size="${(el.labelSize||11)*el.scale}"
           fill="currentColor" stroke="none" font-family="Outfit, sans-serif"
           transform="rotate(${-q.rot})">${esc(el.label)}</text>`:''}
-        ${(lab&&!d.inner)?`<text x="${el.nx||0}" y="${(el.ny??26)*el.scale}" text-anchor="middle" font-size="11"
+        ${(lab&&!d.inner)?`<text x="${el.nx||0}" y="${(el.ny??26)*el.scale}" text-anchor="middle" font-size="${el.labelSize||11}"
           fill="currentColor" stroke="none" font-family="Outfit, sans-serif"
           transform="rotate(${-q.rot} ${el.nx||0} ${(el.ny??26)*el.scale})">${esc(el.label)}</text>`:''}
       </g>`;
@@ -734,8 +741,12 @@ export function mount(container){
     if(el.type==='symbol'){const s=18*el.scale, q=symXY(el);return {x:q.x-s,y:q.y-s,w:s*2,h:s*2};}
     if(el.type==='text'){
       const lines=String(el.txt).split('\n');
-      const w=Math.max(1,...lines.map(l=>l.length))*el.size*0.55;
-      return {x:el.x, y:el.y-el.size, w, h:el.size*0.35 + lines.length*el.size*1.25};
+      const cw=(el.font==='mono'?0.62:0.55)*(el.bold?1.05:1);
+      const w=Math.max(1,...lines.map(l=>l.length))*el.size*cw;
+      const h=el.size*0.35 + lines.length*el.size*1.25;
+      const a=el.align||'start';
+      const x = a==='middle' ? el.x-w/2 : a==='end' ? el.x-w : el.x;
+      return {x, y:el.y-el.size, w, h};
     }
     return {x:0,y:0,w:0,h:0};
   }
@@ -1183,7 +1194,8 @@ export function mount(container){
       askText('').then(t=>{
         if(t==null || !t.trim()) return;
         push();
-        const el={id:uid(),type:'text',x:at.x,y:at.y,txt:t,size:S.textSize,color:S.color};
+        const el={id:uid(),type:'text',x:at.x,y:at.y,txt:t,size:S.textSize,color:S.color,
+          font:S.textFont, align:S.textAlign, bold:S.textBold, italic:S.textItalic};
         S.els.push(el); S.sel=[el]; setTool('select'); render(); props();
       });
       return;
@@ -1605,6 +1617,9 @@ export function mount(container){
               <input class="num" id="pNxN" type="number" min="-60" max="60" value="${el.nx||0}" style="width:48px"></div>
             <div class="row"><label>Name Y</label><input type="range" id="pNy" min="-40" max="60" value="${el.ny??26}">
               <input class="num" id="pNyN" type="number" min="-40" max="60" value="${el.ny??26}" style="width:48px"></div>`;
+      if(el.showLabel)
+        h+=`<div class="row"><label>Name size</label><input type="range" id="pLSz" min="6" max="40" value="${el.labelSize||11}">
+              <input class="num" id="pLSzN" type="number" min="6" max="40" value="${el.labelSize||11}" style="width:48px"></div>`;
       h+=`<div class="muted" style="margin:-2px 0 8px">The name always shows in the popup, whether or not it's drawn.</div>
           <div class="h">Popup details</div>
           <textarea id="pDet" placeholder="e.g. 4000K &middot; 32W &middot; Circuit L3">${esc(el.details)}</textarea>
@@ -1627,12 +1642,28 @@ export function mount(container){
           ? 'Sitting on a wall &mdash; its angle comes from the wall, and the wall is gapped to suit. Drag to slide along, or press D to lift it off.'
           : 'Not on a wall. Drag it within about a symbol\'s width of a line to attach.'}</div>`;
     }
-    if(el.type==='text')
+    if(el.type==='text'){
+      const al=el.align||'start', fn=el.font||'sans';
+      const abtn=(v,label,title)=>`<button class="tbtn tbx${al===v?' on':''}" data-al="${v}" title="${title}" style="flex:1">${label}</button>`;
       h+=`<div class="h">Text</div>
           <textarea id="pTx" rows="3" placeholder="Label text…">${esc(el.txt)}</textarea>
           <div class="muted" style="margin:2px 0 8px">Enter for a new line.</div>
+          <div class="row"><label>Align</label>
+            <div style="display:flex;gap:4px;flex:1">${abtn('start','⤎ L','Left')}${abtn('middle','↔ C','Centre')}${abtn('end','R ⤏','Right')}</div></div>
+          <div class="row"><label>Font</label>
+            <select id="pFont" style="flex:1">
+              <option value="sans"${fn==='sans'?' selected':''}>Sans (Outfit)</option>
+              <option value="mono"${fn==='mono'?' selected':''}>Mono (JetBrains)</option>
+              <option value="serif"${fn==='serif'?' selected':''}>Serif</option>
+            </select></div>
+          <div class="row"><label>Style</label>
+            <div style="display:flex;gap:4px;flex:1">
+              <button class="tbtn tbx${el.bold?' on':''}" id="pBold" style="flex:1;font-weight:700">B</button>
+              <button class="tbtn tbx${el.italic?' on':''}" id="pItal" style="flex:1;font-style:italic">I</button>
+            </div></div>
           <div class="row"><label>Size</label><input type="range" id="pSz" min="8" max="120" value="${el.size}">
             <input class="num" id="pSzN" type="number" min="8" max="120" value="${el.size}" style="width:52px"></div>`;
+    }
     if(el.type==='arc')
       h+=`<div class="row"><label>Bulge</label><input type="range" id="pSag" min="-400" max="400" value="${el.sag}"></div>
           <div class="muted">Drag past zero to swing the arc the other way.</div>`;
@@ -1675,10 +1706,20 @@ export function mount(container){
     bind('#pNyN',v=>{el.ny=+v||0; const n=$('#pNy'); if(n)n.value=+v;});
     bind('#pRo',v=>{el.rot=+v; const n=$('#pRoN'); if(n) n.value=Math.round(+v);});
     bind('#pRoN',v=>{el.rot=((+v||0)%360+360)%360; const n=$('#pRo'); if(n) n.value=el.rot;});
+    bind('#pLSz',v=>{el.labelSize=+v; const n=$('#pLSzN'); if(n)n.value=+v;});
+    bind('#pLSzN',v=>{el.labelSize=+v||11; const n=$('#pLSz'); if(n)n.value=el.labelSize;});
     bind('#pTx',v=>el.txt=v);
     bind('#pSz',v=>{el.size=+v; S.textSize=+v; const n=$('#pSzN'); if(n)n.value=+v;});
     bind('#pSzN',v=>{el.size=+v||16; S.textSize=el.size; const n=$('#pSz'); if(n)n.value=el.size;});
     bind('#pSag',v=>el.sag=+v);
+    // text alignment buttons
+    $$('[data-al]').forEach(b=>b.onclick=()=>{
+      push(); el.align=b.dataset.al; S.textAlign=el.align;
+      $$('[data-al]').forEach(x=>x.classList.toggle('on',x===b)); render();
+    });
+    if($('#pFont')) $('#pFont').onchange=ev=>{push(); el.font=ev.target.value; S.textFont=el.font; render();};
+    if($('#pBold')) $('#pBold').onclick=()=>{push(); el.bold=!el.bold; S.textBold=el.bold; $('#pBold').classList.toggle('on',el.bold); render();};
+    if($('#pItal')) $('#pItal').onclick=()=>{push(); el.italic=!el.italic; S.textItalic=el.italic; $('#pItal').classList.toggle('on',el.italic); render();};
     if($('#pShow')) $('#pShow').onchange=ev=>{push(); el.showLabel=ev.target.checked; render();};
     if($('#pMir'))  $('#pMir').onclick=()=>mirrorSel('mirror');
     if($('#pFlip')) $('#pFlip').onclick=()=>mirrorSel('flip');
@@ -1688,6 +1729,8 @@ export function mount(container){
     if($('#pRotR')) $('#pRotR').onclick=()=>rotateSel(90);
     if($('#pRotN')) $('#pRotN').onchange=ev=>{ const d=+ev.target.value||0; if(d){rotateSel(d); ev.target.value=0;} };
     $('#pDel').onclick=()=>{push();S.els=S.els.filter(x=>x!==el);S.sel=[];render();props();};
+    // make sure the populated settings are actually visible (not below the fold)
+    try{ card.scrollIntoView({block:'nearest'}); }catch{}
   }
 
   /* =========================================================================
