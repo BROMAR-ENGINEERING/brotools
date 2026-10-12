@@ -117,8 +117,11 @@ export function mount(container){
     textSize:16, textFont:'sans', textAlign:'start', textBold:false, textItalic:false,
     draft:null, sel:[], snapHit:null, snapKind:null, joinA:null, dirty:false,
     viewLock:false, marquee:null, segSel:null,
+    paperX:0, paperY:0,
     view:{x:0,y:0,w:PAPER_W,h:PAPER_H}, undo:[], redo:[]
   };
+  // the sheet rectangle in world coords (origin can move — the crop box drags it)
+  const paperRect = () => ({ x:S.paperX||0, y:S.paperY||0, w:PAPER_W, h:PAPER_H });
   // selection is always an array; most panels only make sense for exactly one item
   const sel1 = () => S.sel.length===1 ? S.sel[0] : null;
   const DASH = {solid:'', dashed:'11 7', dotted:'1 5', dashdot:'13 5 2 5'};
@@ -257,6 +260,7 @@ export function mount(container){
       node:'Click a line to edit it · drag a square node to move it · click a segment then Delete to remove just that side',
       marquee:'Drag a box over the objects to select them',
       zoombox:'Drag a box over the area you want to zoom into',
+      crop:'Drag a sheet edge or corner to resize · drag inside to move the sheet over your drawing',
       line:'Click each corner · landing on existing work ends the run · Esc to finish',
       arc:'Click the two ends, then move to set the bulge and click again',
       arctan:'Click the free end of a line or arc, then click where the curve should finish',
@@ -385,7 +389,7 @@ export function mount(container){
     $('#hud').textContent = `${Math.round(w)}×${Math.round(h)} · ${Math.round(PAPER_W/w*100)}% · grid ${S.gridSize}`;
   }
   function fit(){
-    const b = S.bg ? {x:S.bg.x,y:S.bg.y,w:S.bg.w,h:S.bg.h} : {x:0,y:0,w:PAPER_W,h:PAPER_H};
+    const b = S.bg ? {x:S.bg.x,y:S.bg.y,w:S.bg.w,h:S.bg.h} : paperRect();
     const pad=Math.max(b.w,b.h)*0.06;
     S.view={x:b.x-pad,y:b.y-pad,w:b.w+pad*2,h:0}; applyView();
   }
@@ -404,19 +408,29 @@ export function mount(container){
   },{passive:false});
   _on(window, 'resize',()=>{applyView();render()});
   $('#btnFit2').onclick=()=>{fit();render()};
-  $('#btnCanvas').onclick=()=>{
-    $('#cvW').value=PAPER_W; $('#cvH').value=PAPER_H; $('#cvPre').value=`${PAPER_W},${PAPER_H}`;
-    $('#canvasBg').classList.add('show');
+  function setPaper(w,h){
+    PAPER_W=Math.max(100,Math.min(20000,Math.round(w)||PAPER_W));
+    PAPER_H=Math.max(100,Math.min(20000,Math.round(h)||PAPER_H));
+    S.dirty=true; fitPaper(); render();
+    toast(`Canvas set to ${PAPER_W} × ${PAPER_H}.`);
+  }
+  function fitPaper(){ const b=paperRect(); const pad=Math.max(b.w,b.h)*0.08;
+    S.view={x:b.x-pad,y:b.y-pad,w:b.w+pad*2,h:0}; applyView(); }
+  $('#btnFitSheet').onclick=()=>{ fitPaper(); render(); };
+  $('#cvPre2').onchange=e=>{
+    const v=e.target.value; e.target.value='';
+    if(!v) return;
+    if(v==='custom'){
+      $('#cvW').value=PAPER_W; $('#cvH').value=PAPER_H; $('#cvPre').value=`${PAPER_W},${PAPER_H}`;
+      $('#canvasBg').classList.add('show'); return;
+    }
+    const [w,h]=v.split(','); setPaper(+w,+h);
   };
   $('#cvPre').onchange=e=>{ if(e.target.value){ const [w,h]=e.target.value.split(',');$('#cvW').value=w;$('#cvH').value=h; } };
   $('#cvCancel').onclick=()=>$('#canvasBg').classList.remove('show');
   $('#cvApply').onclick=()=>{
-    const w=Math.max(100,Math.min(20000,+$('#cvW').value||PAPER_W));
-    const h=Math.max(100,Math.min(20000,+$('#cvH').value||PAPER_H));
-    PAPER_W=w; PAPER_H=h; S.dirty=true;
     $('#canvasBg').classList.remove('show');
-    fit(); render();
-    toast(`Canvas set to ${w} × ${h}.`);
+    setPaper(+$('#cvW').value, +$('#cvH').value);
   };
   $('#btnLock').onclick=()=>{
     S.viewLock=!S.viewLock;
@@ -776,8 +790,11 @@ export function mount(container){
     return parts.join(' ');
   }
   function render(){
-    paperEl.setAttribute('width',PAPER_W); paperEl.setAttribute('height',PAPER_H);
-    gridEl.setAttribute('width',PAPER_W); gridEl.setAttribute('height',PAPER_H);
+    const pr=paperRect();
+    paperEl.setAttribute('x',pr.x); paperEl.setAttribute('y',pr.y);
+    paperEl.setAttribute('width',pr.w); paperEl.setAttribute('height',pr.h);
+    gridEl.setAttribute('x',pr.x); gridEl.setAttribute('y',pr.y);
+    gridEl.setAttribute('width',pr.w); gridEl.setAttribute('height',pr.h);
     drawGrid();
 
     if(S.bg && !S.bgHidden){
@@ -825,7 +842,7 @@ export function mount(container){
         stroke="${S.color}" stroke-width="${S.weight}" fill="none" stroke-dasharray="${6*k} ${4*k}"/>`;
     }
     if(S.guideL?.length) o+=S.guideL.map(g=>{
-      const col = g.start ? '${C.a}' : '${C.a2}';
+      const col = g.start ? C.a : C.a2;
       // arrow points from the current position back toward the anchor it lines up with
       let dx=g.x1-g.x2, dy=g.y1-g.y2;
       const L=Math.hypot(dx,dy)||1; dx/=L; dy/=L;
@@ -842,7 +859,7 @@ export function mount(container){
     }).join('');
     if(S.snapHit){
       const grid = S.snapKind==='grid';
-      const col = grid ? '${C.a2}' : '${C.a}';
+      const col = grid ? C.a2 : C.a;
       o+=`<circle cx="${S.snapHit.x}" cy="${S.snapHit.y}" r="${13*k}" fill="${col}" opacity=".16"/>`;
       o+= grid
         ? `<path d="M${S.snapHit.x-8*k} ${S.snapHit.y}h${16*k}M${S.snapHit.x} ${S.snapHit.y-8*k}v${16*k}"
@@ -881,7 +898,7 @@ export function mount(container){
     if(one?.pts) o+=one.pts.map(p=>{
       const r=(nodeMode?4.5:3.5)*k;
       return `<rect x="${p.x-r}" y="${p.y-r}" width="${r*2}" height="${r*2}"
-        fill="${nodeMode?'${C.a}':'#FAFAF7'}" stroke="${nodeMode?'#12161C':'${C.a}'}" stroke-width="${1.2*k}"/>`;
+        fill="${nodeMode?C.a:'#FAFAF7'}" stroke="${nodeMode?'#12161C':C.a}" stroke-width="${1.2*k}"/>`;
     }).join('');
     // show which corners can be filleted while those tools are up
     if(S.tool==='fillet'||S.tool==='chamfer'){
@@ -890,7 +907,7 @@ export function mount(container){
         for(let i=1;i<el.pts.length-1;i++){
           const on=el.corners?.[i];
           o+=`<circle cx="${el.pts[i].x}" cy="${el.pts[i].y}" r="${5*k}" fill="none"
-            stroke="${on?'${C.a}':'${C.a2}'}" stroke-width="${1.2*k}" opacity=".85"/>`;
+            stroke="${on?C.a:C.a2}" stroke-width="${1.2*k}" opacity=".85"/>`;
         }
       }
     }
@@ -926,11 +943,26 @@ export function mount(container){
     if(S.marquee){
       const m=S.marquee, x=Math.min(m.x0,m.x1), y=Math.min(m.y0,m.y1),
             w=Math.abs(m.x1-m.x0), hgt=Math.abs(m.y1-m.y0);
-      const col=m.zoom?'${C.a2}':'${C.a}';
+      const col=m.zoom?C.a2:C.a;
       o+=`<rect x="${x}" y="${y}" width="${w}" height="${hgt}" fill="${col}" fill-opacity=".08"
         stroke="${col}" stroke-width="${1*k}" stroke-dasharray="${5*k} ${3*k}"/>`;
     }
+    // crop box: the sheet outline with 8 drag handles
+    if(S.tool==='crop'){
+      const b=paperRect(), hs=5*k;
+      o+=`<rect x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" fill="none"
+        stroke="${C.a}" stroke-width="${1.4*k}" stroke-dasharray="${7*k} ${4*k}"/>`;
+      for(const [hx,hy] of cropHandles()){
+        const px=b.x + (hx+1)/2*b.w, py=b.y + (hy+1)/2*b.h;
+        o+=`<rect x="${px-hs}" y="${py-hs}" width="${hs*2}" height="${hs*2}"
+          fill="#fff" stroke="${C.a}" stroke-width="${1.4*k}"/>`;
+      }
+    }
     overlay.innerHTML=o;
+  }
+  // the 8 crop handles as (hx,hy) in {-1,0,1}, excluding the centre
+  function cropHandles(){
+    const r=[]; for(const hy of [-1,0,1]) for(const hx of [-1,0,1]) if(hx||hy) r.push([hx,hy]); return r;
   }
 
   /* =========================================================================
@@ -1082,6 +1114,20 @@ export function mount(container){
 
     if(S.tool==='pan'){ if(!S.viewLock) down.view={...S.view}; return; }
     if(S.tool==='marquee'||S.tool==='zoombox'){ down.marquee=true; S.marquee={x0:raw.x,y0:raw.y,x1:raw.x,y1:raw.y,add:e.shiftKey,zoom:S.tool==='zoombox'}; return; }
+    if(S.tool==='crop'){
+      const b=paperRect(), R=8*scale();
+      // nearest handle?
+      let grab=null;
+      for(const [hx,hy] of cropHandles()){
+        const px=b.x+(hx+1)/2*b.w, py=b.y+(hy+1)/2*b.h;
+        if(Math.abs(raw.x-px)<R && Math.abs(raw.y-py)<R){ grab={hx,hy}; break; }
+      }
+      push();
+      if(grab) down.crop={...grab, start:{...b}};
+      else if(raw.x>b.x&&raw.x<b.x+b.w&&raw.y>b.y&&raw.y<b.y+b.h) down.crop={move:true, start:{...b}};
+      else { S.undo.pop(); }                      // clicked outside the sheet — nothing to do
+      return;
+    }
 
     if(S.bg && !$('#bgLock').checked){
       const b=S.bg, k=scale();
@@ -1213,6 +1259,23 @@ export function mount(container){
       applyView();
     }
     if(down?.marquee && S.marquee){ S.marquee.x1=raw.x; S.marquee.y1=raw.y; }
+    if(down?.crop){
+      const st=down.crop.start;
+      if(down.crop.move){
+        S.paperX=st.x+(raw.x-down.raw.x); S.paperY=st.y+(raw.y-down.raw.y);
+      } else {
+        let x=st.x, y=st.y, w=st.w, h=st.h;
+        const g=S.snapG ? v=>Math.round(v/S.gridSize)*S.gridSize : v=>v;
+        if(down.crop.hx===-1){ const r=st.x+st.w; x=g(raw.x); w=r-x; }
+        if(down.crop.hx=== 1){ w=g(raw.x)-st.x; }
+        if(down.crop.hy===-1){ const bt=st.y+st.h; y=g(raw.y); h=bt-y; }
+        if(down.crop.hy=== 1){ h=g(raw.y)-st.y; }
+        if(w<50){ if(down.crop.hx===-1) x=st.x+st.w-50; w=50; }
+        if(h<50){ if(down.crop.hy===-1) y=st.y+st.h-50; h=50; }
+        S.paperX=x; S.paperY=y; PAPER_W=Math.round(w); PAPER_H=Math.round(h);
+      }
+      S.dirty=true;
+    }
     if(down?.bgRot){
       const ang=Math.atan2(raw.y-down.bgRot.c.y, raw.x-down.bgRot.c.x);
       S.bg.rot = Math.round((down.bgRot.rot0 + (ang-down.bgRot.start)*180/Math.PI)%360);
@@ -1849,10 +1912,11 @@ export function mount(container){
       const href=await fileToDataURL(f);
       busy('Inserting image','Placing it on the sheet…');
       const img=await decode(href);
-      const s=Math.min(PAPER_W/img.naturalWidth, PAPER_H/img.naturalHeight)*0.9;
+      const _pr=paperRect();
+      const s=Math.min(_pr.w/img.naturalWidth, _pr.h/img.naturalHeight)*0.9;
       S.bg={href, w:img.naturalWidth*s, h:img.naturalHeight*s, x:0, y:0, rot:0, skx:0, sky:0};
       S.bg.w0=S.bg.w; S.bg.h0=S.bg.h;             // remember native aspect for the ratio lock
-      S.bg.x=(PAPER_W-S.bg.w)/2; S.bg.y=(PAPER_H-S.bg.h)/2;
+      S.bg.x=_pr.x+(_pr.w-S.bg.w)/2; S.bg.y=_pr.y+(_pr.h-S.bg.h)/2;
       S.dirty=true;
       hideToast(); syncBgPanel(); fit(); render();
     }catch(err){ toast(err.message||'Could not load that image.', true); }
@@ -1918,7 +1982,7 @@ export function mount(container){
      EXPORT
      ========================================================================= */
   function bounds(){
-    let b = S.bg ? {x:S.bg.x,y:S.bg.y,w:S.bg.w,h:S.bg.h} : {x:0,y:0,w:PAPER_W,h:PAPER_H};
+    let b = S.bg ? {x:S.bg.x,y:S.bg.y,w:S.bg.w,h:S.bg.h} : paperRect();
     for(const el of S.els){const e=bbox(el);
       const x=Math.min(b.x,e.x), y=Math.min(b.y,e.y);
       b={x,y,w:Math.max(b.x+b.w,e.x+e.w)-x,h:Math.max(b.y+b.h,e.y+e.h)-y};}
@@ -1936,6 +2000,99 @@ export function mount(container){
       <rect x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" fill="#FAFAF7"/>
       ${bg}${S.els.map(svgOf).join('')}</svg>`};
   }
+  /* ---- DXF export -------------------------------------------------------
+     Converts the drawing to AutoCAD R12 DXF (text-based, opens in every CAD
+     package; AutoCAD can then Save As DWG). SVG Y runs down, CAD Y runs up,
+     so every Y is negated. Lines, rectangles and circles become native CAD
+     entities; arcs and symbols are flattened to polylines by sampling their
+     rendered SVG paths in the browser (with safe fallbacks). Units are the
+     drawing's own — rescale in CAD until a real-world calibration exists.
+     ---------------------------------------------------------------------- */
+  function dxfDoc(){
+    const out=[]; const put=(c,v)=>{ out.push(c); out.push(v); };
+    const fmt=n=>(+n).toFixed(4);
+    const FY=y=>-y;                                   // flip to CAD's up-axis
+    put(0,'SECTION'); put(2,'ENTITIES');
+
+    const ePolyline=(pts,closed)=>{
+      if(pts.length<2) return;
+      put(0,'POLYLINE'); put(8,'0'); put(66,1); put(70,closed?1:0);
+      for(const p of pts){ put(0,'VERTEX'); put(8,'0'); put(10,fmt(p.x)); put(20,fmt(FY(p.y))); }
+      put(0,'SEQEND');
+    };
+    const eCircle=(x,y,r)=>{ put(0,'CIRCLE'); put(8,'0'); put(10,fmt(x)); put(20,fmt(FY(y))); put(40,fmt(r)); };
+    const eText=(x,y,hgt,s)=>{ put(0,'TEXT'); put(8,'0'); put(10,fmt(x)); put(20,fmt(FY(y))); put(40,fmt(hgt)); put(1,String(s).slice(0,255)); };
+
+    // offscreen 1:1 SVG so getCTM / getPointAtLength return world coordinates
+    const off=document.createElementNS('http://www.w3.org/2000/svg','svg');
+    const _pr=paperRect();
+    off.setAttribute('viewBox',`${_pr.x} ${_pr.y} ${_pr.w} ${_pr.h}`);
+    off.setAttribute('width',_pr.w); off.setAttribute('height',_pr.h);
+    off.style.cssText='position:absolute;left:-99999px;top:0;visibility:hidden';
+    off.innerHTML=S.els.map(svgOf).join('');
+    (container.querySelector('#stagewrap')||container).appendChild(off);
+
+    const splitSubpaths = d => /[a-z]/.test(d) ? [d] : (d.match(/M[^M]*/g)||[d]);
+    const sampleNode=(node)=>{                        // → array of world-space polylines
+      const res=[];
+      const geoms=[...node.querySelectorAll('path,rect,circle,ellipse,line,polyline,polygon')];
+      if(node.matches && node.matches('path,rect,circle,ellipse,line,polyline,polygon')) geoms.unshift(node);
+      for(const g of geoms){
+        try{
+          const ctm=g.getCTM(); if(!ctm) continue;
+          const subs = g.tagName==='path' ? splitSubpaths(g.getAttribute('d')||'') : [null];
+          for(const d of subs){
+            let geo=g;
+            if(d!=null){ geo=document.createElementNS('http://www.w3.org/2000/svg','path'); geo.setAttribute('d',d); off.appendChild(geo); }
+            const len = geo.getTotalLength ? geo.getTotalLength() : 0;
+            if(len>0){
+              const n=Math.max(2,Math.ceil(len/2)), pl=[];
+              for(let i=0;i<=n;i++){ const pt=geo.getPointAtLength(len*i/n).matrixTransform(ctm); pl.push({x:pt.x,y:pt.y}); }
+              res.push(pl);
+            }
+            if(d!=null) off.removeChild(geo);
+          }
+        }catch(e){ /* this element couldn't be sampled — skip it */ }
+      }
+      return res;
+    };
+
+    for(const el of S.els){
+      if(el.type==='poly'){
+        const closed = el.pts.length>2 && vkey(el.pts[0])===vkey(el.pts.at(-1));
+        ePolyline(closed?el.pts.slice(0,-1):el.pts, closed);
+      } else if(el.type==='rect'){
+        ePolyline([{x:el.x,y:el.y},{x:el.x+el.w,y:el.y},{x:el.x+el.w,y:el.y+el.h},{x:el.x,y:el.y+el.h}], true);
+      } else if(el.type==='circle'){
+        eCircle(el.x,el.y,el.r);
+      } else if(el.type==='arc'){
+        const node=off.querySelector(`[data-id="${el.id}"]`);
+        const pls = node ? sampleNode(node) : [];
+        if(pls.length) pls.forEach(pl=>ePolyline(pl,false));
+        else ePolyline([el.pts[0],el.pts[1]],false);   // fallback: chord
+      } else if(el.type==='symbol'){
+        const node=off.querySelector(`[data-id="${el.id}"]`);
+        const pls = node ? sampleNode(node) : [];
+        if(pls.length) pls.forEach(pl=>ePolyline(pl,false));
+        else { const q=symXY(el); eCircle(q.x,q.y,4*el.scale); }   // fallback: marker
+        if(el.showLabel && el.label){ const q=symXY(el); eText(q.x, q.y+(el.ny??26)*el.scale, el.labelSize||11, el.label); }
+      } else if(el.type==='text'){
+        const lines=String(el.txt).split('\n');
+        const cw=(el.font==='mono'?0.62:0.55)*(el.bold?1.05:1);
+        lines.forEach((ln,i)=>{
+          const lw=ln.length*el.size*cw;
+          const lx = el.align==='middle' ? el.x-lw/2 : el.align==='end' ? el.x-lw : el.x;
+          eText(lx, el.y + i*el.size*1.25, el.size, ln);
+        });
+      }
+    }
+
+    off.remove();
+    put(0,'ENDSEC'); put(0,'EOF');
+    let s=''; for(let i=0;i<out.length;i+=2) s+=out[i]+'\n'+out[i+1]+'\n';
+    return s;
+  }
+
   // ask once, before an export, whether to bake in the traced image
   async function wantImage(){
     if(!S.bg || S.bgHidden) return false;         // nothing to include
@@ -1985,6 +2142,19 @@ export function mount(container){
       c.toBlob(bl=>saveAs(safeName()+'.png', bl, 'image/png', '.png', 'PNG image'));
     };
     img.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg);
+  };
+  $('#btnSvg').onclick=async()=>{
+    const inc=await wantImage(); if(inc===null) return;
+    const {svg}=svgDoc(inc);
+    saveAs(safeName()+'.svg', new Blob([svg],{type:'image/svg+xml'}), 'image/svg+xml', '.svg', 'SVG vector');
+  };
+  $('#btnDxf').onclick=()=>{
+    if(!S.els.length){ toast('Nothing to export yet.',true); return; }
+    try{
+      const dxf=dxfDoc();
+      saveAs(safeName()+'.dxf', new Blob([dxf],{type:'application/dxf'}), 'application/dxf', '.dxf', 'DXF drawing (CAD)');
+      toast('DXF exported — open in CAD, then Save As DWG if you need DWG. Units are the drawing\'s own; rescale in CAD.');
+    }catch(e){ toast('Could not build the DXF.',true); }
   };
   $('#btnHtml').onclick=async()=>{
     const inc=await wantImage(); if(inc===null) return;
@@ -2046,7 +2216,7 @@ export function mount(container){
   let fileHandle=null;
   async function saveProject(forceDialog){
     const blob=new Blob(
-      [JSON.stringify({name:docName(),els:S.els,bg:S.bg,gridSize:S.gridSize,paperW:PAPER_W,paperH:PAPER_H})],
+      [JSON.stringify({name:docName(),els:S.els,bg:S.bg,gridSize:S.gridSize,paperW:PAPER_W,paperH:PAPER_H,paperX:S.paperX,paperY:S.paperY})],
       {type:'application/json'});
     const h=await saveAs(safeName()+'.json', blob, 'application/json', '.json',
       'Plan Tracer project', forceDialog?null:fileHandle);
@@ -2104,6 +2274,7 @@ export function mount(container){
         if(d.name){ $('#docName').value=d.name; /* title owned by hub */ }
         if(d.gridSize){S.gridSize=d.gridSize;$('#gSize').value=d.gridSize;$('#gPre').value=String(d.gridSize);}
         if(d.paperW) PAPER_W=d.paperW; if(d.paperH) PAPER_H=d.paperH;
+        S.paperX=d.paperX||0; S.paperY=d.paperY||0;
         syncBgPanel(); fit(); render(); props();
       }catch{ toast('That file is not a Plan Tracer project.',true); }
     };
@@ -2168,6 +2339,8 @@ const TEMPLATE = `<!-- ============ HEADER 1 : FILE ============ -->
   <div class="grow"></div>
   <button class="tbtn" id="btnKeys" title="Keyboard shortcuts (?)">⌨ Shortcuts</button>
   <button class="tbtn" id="btnPng">Export PNG</button>
+  <button class="tbtn" id="btnSvg">Export SVG</button>
+  <button class="tbtn" id="btnDxf">Export DXF</button>
   <button class="tbtn" id="btnHtml" style="border-color:var(--amber);color:var(--amber)">Export interactive HTML</button>
   <input type="file" id="fileImg" accept="image/*,.heic,.heif,.HEIC,.HEIF">
   <input type="file" id="fileProj" accept=".json,application/json">
@@ -2209,8 +2382,28 @@ const TEMPLATE = `<!-- ============ HEADER 1 : FILE ============ -->
         <svg viewBox="0 0 16 16"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4"/></svg>Fit</button>
       <button class="tool" id="btnLock" title="Lock the view — stops accidental panning and zooming">
         <svg viewBox="0 0 16 16"><rect x="3" y="7" width="10" height="7" rx="1"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"/></svg>Lock</button>
-      <button class="tool" id="btnCanvas" title="Set the canvas size">
-        <svg viewBox="0 0 16 16"><rect x="2.5" y="3.5" width="11" height="9"/><path d="M2.5 6.5h11M6 3.5v9" opacity=".4"/></svg>Canvas</button>
+    </div>
+  </div>
+  <div class="tile">
+    <span class="cap">Canvas</span>
+    <div class="grp">
+      <select class="num" id="cvPre2" style="width:132px" title="Document size">
+        <option value="">Document size…</option>
+        <option value="1123,794">A4 landscape</option>
+        <option value="794,1123">A4 portrait</option>
+        <option value="1587,1123">A3 landscape</option>
+        <option value="1123,1587">A3 portrait</option>
+        <option value="2245,1587">A2 landscape</option>
+        <option value="1587,2245">A2 portrait</option>
+        <option value="1600,1100">Default</option>
+        <option value="1920,1080">16:9 screen</option>
+        <option value="2000,2000">Square</option>
+        <option value="custom">Custom size…</option>
+      </select>
+      <button class="tool" data-tool="crop" title="Crop — drag the sheet edges to resize, drag inside to move it over your drawing">
+        <svg viewBox="0 0 16 16"><path d="M5 1v10h10M1 5h10v10" /></svg>Crop</button>
+      <button class="tool" id="btnFitSheet" title="Fit the view to the sheet">
+        <svg viewBox="0 0 16 16"><rect x="2.5" y="3.5" width="11" height="9" rx="1"/><path d="M6 7h4M8 5v4" opacity=".5"/></svg>Fit sheet</button>
     </div>
   </div>
   <div class="grow"></div>
