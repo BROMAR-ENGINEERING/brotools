@@ -113,7 +113,7 @@ export function mount(container){
     snapA:true, snapG:false, grid:false, ortho:false, guides:true, labels:true, gridSize:20,
     rad:20, dash:'solid', symScale:1,
     guideL:[],
-    els:[], bg:null, bgHidden:false, draft:null, sel:[], snapHit:null, snapKind:null, joinA:null, dirty:false,
+    els:[], bg:null, bgHidden:false, hideDrawing:false, textSize:16, draft:null, sel:[], snapHit:null, snapKind:null, joinA:null, dirty:false,
     viewLock:false, marquee:null, segSel:null,
     view:{x:0,y:0,w:PAPER_W,h:PAPER_H}, undo:[], redo:[]
   };
@@ -690,9 +690,13 @@ export function mount(container){
       return `<rect data-id="${el.id}" x="${el.x}" y="${el.y}" width="${el.w}" height="${el.h}" ${st}/>`;
     if(el.type==='circle')
       return `<circle data-id="${el.id}" cx="${el.x}" cy="${el.y}" r="${el.r}" ${st}/>`;
-    if(el.type==='text')
+    if(el.type==='text'){
+      const lines=String(el.txt).split('\n');
+      const spans=lines.map((ln,i)=>
+        `<tspan x="${el.x}" dy="${i===0?0:el.size*1.25}">${esc(ln)||' '}</tspan>`).join('');
       return `<text data-id="${el.id}" x="${el.x}" y="${el.y}" fill="${el.color}" stroke="none"
-        font-size="${el.size}" font-family="Outfit, sans-serif">${esc(el.txt)}</text>`;
+        font-size="${el.size}" font-family="Outfit, sans-serif">${spans}</text>`;
+    }
     if(el.type==='symbol'){
       const d=findSym(el.sym)||{svg:''};
       const q=symXY(el);
@@ -728,7 +732,11 @@ export function mount(container){
     if(el.type==='rect') return {x:el.x,y:el.y,w:el.w,h:el.h};
     if(el.type==='circle') return {x:el.x-el.r,y:el.y-el.r,w:el.r*2,h:el.r*2};
     if(el.type==='symbol'){const s=18*el.scale, q=symXY(el);return {x:q.x-s,y:q.y-s,w:s*2,h:s*2};}
-    if(el.type==='text') return {x:el.x,y:el.y-el.size,w:el.txt.length*el.size*0.55,h:el.size*1.3};
+    if(el.type==='text'){
+      const lines=String(el.txt).split('\n');
+      const w=Math.max(1,...lines.map(l=>l.length))*el.size*0.55;
+      return {x:el.x, y:el.y-el.size, w, h:el.size*0.35 + lines.length*el.size*1.25};
+    }
     return {x:0,y:0,w:0,h:0};
   }
 
@@ -770,8 +778,8 @@ export function mount(container){
       bgEl.style.display='';
     } else bgEl.style.display='none';
 
-    content.innerHTML = S.els.map(svgOf).join('');
-    if(!S.sel.length) $('#hilite').innerHTML='';
+    content.innerHTML = S.hideDrawing ? '' : S.els.map(svgOf).join('');
+    if(!S.sel.length || S.hideDrawing) $('#hilite').innerHTML='';
     $('#empty').style.display = (S.els.length||S.bg)?'none':'';
 
     let o=''; const k=scale();
@@ -980,6 +988,7 @@ export function mount(container){
     return Math.hypot(p.x-cx,p.y-cy);
   }
   function pickAt(p){
+    if(S.hideDrawing) return null;                 // can't grab what isn't shown
     const R=8*scale();
     let best=null;
     for(const el of S.els){                       // later = on top, so last match wins
@@ -1170,9 +1179,14 @@ export function mount(container){
       S.els.push(el); S.sel=[el]; setTool('select'); render(); props(); return;
     }
     if(S.tool==='text'){
-      const t=prompt('Label text'); if(!t)return;
-      push(); const el={id:uid(),type:'text',x:p.x,y:p.y,txt:t,size:16,color:S.color};
-      S.els.push(el); S.sel=[el]; setTool('select'); render(); props(); return;
+      const at={x:p.x,y:p.y};
+      askText('').then(t=>{
+        if(t==null || !t.trim()) return;
+        push();
+        const el={id:uid(),type:'text',x:at.x,y:at.y,txt:t,size:S.textSize,color:S.color};
+        S.els.push(el); S.sel=[el]; setTool('select'); render(); props();
+      });
+      return;
     }
   });
 
@@ -1614,8 +1628,11 @@ export function mount(container){
           : 'Not on a wall. Drag it within about a symbol\'s width of a line to attach.'}</div>`;
     }
     if(el.type==='text')
-      h+=`<div class="row"><label>Text</label><input type="text" id="pTx" value="${esc(el.txt)}"></div>
-          <div class="row"><label>Size</label><input type="range" id="pSz" min="8" max="60" value="${el.size}"></div>`;
+      h+=`<div class="h">Text</div>
+          <textarea id="pTx" rows="3" placeholder="Label text…">${esc(el.txt)}</textarea>
+          <div class="muted" style="margin:2px 0 8px">Enter for a new line.</div>
+          <div class="row"><label>Size</label><input type="range" id="pSz" min="8" max="120" value="${el.size}">
+            <input class="num" id="pSzN" type="number" min="8" max="120" value="${el.size}" style="width:52px"></div>`;
     if(el.type==='arc')
       h+=`<div class="row"><label>Bulge</label><input type="range" id="pSag" min="-400" max="400" value="${el.sag}"></div>
           <div class="muted">Drag past zero to swing the arc the other way.</div>`;
@@ -1658,7 +1675,9 @@ export function mount(container){
     bind('#pNyN',v=>{el.ny=+v||0; const n=$('#pNy'); if(n)n.value=+v;});
     bind('#pRo',v=>{el.rot=+v; const n=$('#pRoN'); if(n) n.value=Math.round(+v);});
     bind('#pRoN',v=>{el.rot=((+v||0)%360+360)%360; const n=$('#pRo'); if(n) n.value=el.rot;});
-    bind('#pTx',v=>el.txt=v); bind('#pSz',v=>el.size=+v);
+    bind('#pTx',v=>el.txt=v);
+    bind('#pSz',v=>{el.size=+v; S.textSize=+v; const n=$('#pSzN'); if(n)n.value=+v;});
+    bind('#pSzN',v=>{el.size=+v||16; S.textSize=el.size; const n=$('#pSz'); if(n)n.value=el.size;});
     bind('#pSag',v=>el.sag=+v);
     if($('#pShow')) $('#pShow').onchange=ev=>{push(); el.showLabel=ev.target.checked; render();};
     if($('#pMir'))  $('#pMir').onclick=()=>mirrorSel('mirror');
@@ -1702,6 +1721,23 @@ export function mount(container){
   const busyOff = () => $('#busyBg').classList.remove('show');
 
   // ask('Title','message',[{k:'save',t:'Save',primary:true},…]) → Promise of the key
+  // custom multi-line text box (replaces the browser prompt)
+  function askText(initial){
+    return new Promise(res=>{
+      const bg=$('#textBg'), ta=$('#textInput');
+      ta.value=initial||'';
+      bg.classList.add('show');
+      setTimeout(()=>{ ta.focus(); ta.select(); }, 30);
+      const done=v=>{ bg.classList.remove('show'); ta.onkeydown=null; res(v); };
+      $('#textOK').onclick=()=>done(ta.value);
+      $('#textCancel').onclick=()=>done(null);
+      // Enter adds a newline (default textarea); Ctrl/Cmd+Enter confirms, Esc cancels
+      ta.onkeydown=ev=>{
+        if(ev.key==='Enter' && (ev.ctrlKey||ev.metaKey)){ ev.preventDefault(); done(ta.value); }
+        else if(ev.key==='Escape'){ ev.preventDefault(); done(null); }
+      };
+    });
+  }
   function ask(title,msg,buttons){
     return new Promise(res=>{
       $('#askT').textContent=title;
@@ -1785,6 +1821,7 @@ export function mount(container){
   $('#fileImg').onchange=e=>{ useImage(e.target.files[0]); e.target.value=''; };
   $('#bgOp').oninput=render; $('#bgLock').onchange=render;
   $('#bgHide').onchange=e=>{ S.bgHidden=e.target.checked; render(); };
+  $('#drawHide').onchange=e=>{ S.hideDrawing=e.target.checked; if(S.hideDrawing) S.sel=[]; render(); props(); };
   $('#btnImgDel').onclick=()=>{
     if(!S.bg){ toast('No image to remove.',true); return; }
     S.bg=null; S.dirty=true; syncBgPanel(); render();
@@ -1802,6 +1839,7 @@ export function mount(container){
     $('#bgRotS').value=b.rot||0; $('#bgRotN').value=b.rot||0;
     $('#bgSkX').value=b.skx||0; $('#bgSkY').value=b.sky||0;
     $('#bgHide').checked=S.bgHidden;
+    $('#drawHide').checked=S.hideDrawing;
     render();
   }
   function bgResize(w,h){
@@ -2226,6 +2264,7 @@ const TEMPLATE = `<!-- ============ HEADER 1 : FILE ============ -->
         <div class="row"><label>Opacity</label><input type="range" id="bgOp" min="0" max="100" value="55"></div>
         <label class="chk"><input type="checkbox" id="bgLock" checked> Lock image</label>
         <label class="chk"><input type="checkbox" id="bgHide"> Hide image</label>
+        <label class="chk"><input type="checkbox" id="drawHide"> Hide drawing (show plan only)</label>
         <div class="h" style="margin-top:6px">Adjust</div>
         <div class="row"><label>Width</label><input class="num" id="bgW" type="number" min="20" step="1" style="width:70px"></div>
         <div class="row"><label>Height</label><input class="num" id="bgH" type="number" min="20" step="1" style="width:70px"></div>
@@ -2264,6 +2303,16 @@ const TEMPLATE = `<!-- ============ HEADER 1 : FILE ============ -->
   <h2 id="askT"></h2>
   <p id="askM"></p>
   <div id="askBtns"></div>
+</div></div>
+
+<div id="textBg"><div id="askBox">
+  <h2>Text label</h2>
+  <p>Type your text. Press Enter for a new line.</p>
+  <textarea id="textInput" rows="4" spellcheck="true" placeholder="Label text…"></textarea>
+  <div id="askBtns" style="margin-top:14px">
+    <button class="tbtn" id="textCancel">Cancel</button>
+    <button class="tbtn" id="textOK" style="border-color:var(--amber);color:var(--amber)">Add (Ctrl+Enter)</button>
+  </div>
 </div></div>
 
 <div id="canvasBg"><div id="askBox">
