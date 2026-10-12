@@ -10,30 +10,32 @@
 
 
 .tool-plan-tracer{
-  /* UI chrome follows Bromar Ops shared.css (fallbacks keep it working alone) */
-  --chrome:   var(--bg-main, #171B22);
-  --chrome-2: var(--bg-secondary, #1F242E);
-  --line:     var(--border, #2C3340);
-  --text:     var(--text-primary, #DDE3EC);
-  --muted:    var(--text-secondary, #7D8798);
-  --amber:    var(--accent, #FFB020);
-  --amber-dim: color-mix(in srgb, var(--accent, #FFB020) 16%, transparent);
-  /* drawing-surface accents stay fixed so they read on the dark canvas */
-  --teal:#2BD9C8;
-  --aid-bg:  color-mix(in srgb, #2BD9C8 9%,  var(--chrome));
-  --aid-line:color-mix(in srgb, #2BD9C8 28%, var(--line));
-  --ctx-bg:  color-mix(in srgb, var(--accent, #FFB020) 9%, var(--chrome));
+  /* UI chrome + canvas all follow Bromar Ops shared.css */
+  --chrome:    var(--bg-main);
+  --chrome-2:  var(--bg-secondary);
+  --line:      var(--border);
+  --text:      var(--text-primary);
+  --muted:     var(--text-secondary);
+  --amber:     var(--accent);
+  --amber-2:   var(--accent-light);
+  --amber-dim: rgba(234, 88, 12, 0.12);
+  --teal:      var(--accent-light);   /* legacy name, now the lighter orange */
+  --aid-bg:    var(--bg-main);
+  --aid-line:  var(--border);
+  --ctx-bg:    var(--bg-secondary);
+  font-family:'Outfit',sans-serif;
 }
+[data-theme="dark"] .tool-plan-tracer{ --amber-dim: rgba(251, 146, 60, 0.16); }
 .tool-plan-tracer *{box-sizing:border-box;margin:0;padding:0}
 .tool-plan-tracer{height:100%}
-.tool-plan-tracer{font-family:'IBM Plex Sans',system-ui,sans-serif;background:var(--chrome);color:var(--text);
+.tool-plan-tracer{font-family:'Outfit',system-ui,sans-serif;background:var(--chrome);color:var(--text);
   display:flex;flex-direction:column;overflow:hidden}
 .tool-plan-tracer button, .tool-plan-tracer select, .tool-plan-tracer input, .tool-plan-tracer textarea{font-family:inherit;font-size:12px}
 
 /* ---------- bar 1 : file ---------- */
 .tool-plan-tracer #top{display:flex;align-items:center;gap:8px;padding:0 12px;height:44px;
   background:var(--chrome);border-bottom:1px solid var(--line);flex:none}
-.tool-plan-tracer #brand{font-family:'IBM Plex Mono',monospace;font-weight:600;font-size:12px;
+.tool-plan-tracer #brand{font-family:'JetBrains Mono',monospace;font-weight:600;font-size:12px;
   letter-spacing:.18em;text-transform:uppercase;color:var(--amber);flex:none}
 .tool-plan-tracer #brand span{color:var(--muted)}
 .tool-plan-tracer #docName{width:180px;background:transparent;border:1px solid transparent;color:var(--text);
@@ -44,7 +46,7 @@
 .tool-plan-tracer .grow{flex:1}
 .tool-plan-tracer .tbtn{background:transparent;border:1px solid var(--line);color:var(--text);
   padding:6px 10px;border-radius:4px;cursor:pointer;white-space:nowrap}
-.tool-plan-tracer .tbtn:hover{border-color:color-mix(in srgb, var(--text) 25%, var(--line));background:var(--chrome-2)}
+.tool-plan-tracer .tbtn:hover{border-color:var(--amber);background:var(--card-hover)}
 .tool-plan-tracer .tbtn:focus-visible{outline:2px solid var(--amber);outline-offset:1px}
 .tool-plan-tracer .tbtn:disabled{opacity:.35;cursor:default}
 .tool-plan-tracer .tbtn:disabled:hover{border-color:var(--line);background:transparent}
@@ -59,24 +61,24 @@
 .tool-plan-tracer .tile{display:flex;flex-direction:column;gap:4px;flex:none;
   border:1px solid var(--line);border-radius:6px;padding:4px 8px 6px;
   background:rgba(255,255,255,.02)}
-.tool-plan-tracer #mb .tile{border-color:var(--aid-line);background:rgba(43,217,200,.05)}
+.tool-plan-tracer #mb .tile{border-color:var(--aid-line);background:var(--card-hover)}
 .tool-plan-tracer .tile .grp{display:flex;align-items:center;gap:4px;flex:none}
-.tool-plan-tracer .cap{font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:.14em;
+.tool-plan-tracer .cap{font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.14em;
   text-transform:uppercase;color:var(--muted);flex:none}
-.tool-plan-tracer #mb .cap{color:var(--teal)}
+.tool-plan-tracer #mb .cap{color:var(--amber)}
 .tool-plan-tracer .grp{display:flex;align-items:center;gap:4px;flex:none}
 
 .tool-plan-tracer .tool{display:flex;align-items:center;gap:6px;height:30px;padding:0 9px;cursor:pointer;
   border:1px solid var(--line);background:transparent;border-radius:4px;color:var(--text);flex:none}
 .tool-plan-tracer .tool svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:1.5;
   stroke-linecap:round;stroke-linejoin:round}
-.tool-plan-tracer .tool:hover{background:color-mix(in srgb, var(--text) 8%, transparent)}
+.tool-plan-tracer .tool:hover{background:var(--card-hover)}
 .tool-plan-tracer .tool.on{background:var(--amber-dim);border-color:var(--amber);color:var(--amber)}
 .tool-plan-tracer .tool:focus-visible{outline:2px solid var(--amber);outline-offset:1px}
 .tool-plan-tracer #mb .tool{border-color:var(--aid-line)}
-.tool-plan-tracer #mb .tool:hover{background:rgba(43,217,200,.1)}
-.tool-plan-tracer #mb .tool.on{background:rgba(43,217,200,.16);border-color:var(--teal);color:var(--teal)}
-.tool-plan-tracer #btnLock.locked{background:rgba(255,176,32,.16);border-color:var(--amber);color:var(--amber)}
+.tool-plan-tracer #mb .tool:hover{background:var(--card-hover)}
+.tool-plan-tracer #mb .tool.on{background:var(--amber-dim);border-color:var(--amber);color:var(--amber)}
+.tool-plan-tracer #btnLock.locked{background:var(--amber-dim);border-color:var(--amber);color:var(--amber)}
 .tool-plan-tracer #hilite path, .tool-plan-tracer #hilite rect, .tool-plan-tracer #hilite circle{fill:none;stroke:var(--amber);
   stroke-opacity:.9;pointer-events:none}
 .tool-plan-tracer .wt{width:34px;height:30px;border:1px solid var(--line);border-radius:4px;background:transparent;
@@ -89,10 +91,10 @@
 .tool-plan-tracer #finish{border-color:var(--amber);color:var(--amber)}
 .tool-plan-tracer .stp{width:26px;height:30px;border:1px solid var(--aid-line);background:transparent;color:var(--text);
   border-radius:4px;cursor:pointer;font-size:14px;line-height:1;flex:none}
-.tool-plan-tracer .stp:hover{background:rgba(43,217,200,.1)}
+.tool-plan-tracer .stp:hover{background:var(--card-hover)}
 .tool-plan-tracer .num{height:30px;background:var(--chrome);border:1px solid var(--line);color:var(--text);
   border-radius:4px;padding:0 6px;width:56px;flex:none;
-  font-family:'IBM Plex Mono',monospace;font-size:12px;text-align:center}
+  font-family:'JetBrains Mono',monospace;font-size:12px;text-align:center}
 .tool-plan-tracer #mb .num{border-color:var(--aid-line)}
 .tool-plan-tracer .num:focus-visible{outline:2px solid var(--amber);outline-offset:1px}
 .tool-plan-tracer select.num{text-align:left}
@@ -108,13 +110,13 @@
 .tool-plan-tracer #ctx{display:none;align-items:stretch;gap:8px;padding:6px 10px;flex:none;overflow-x:auto;
   background:var(--ctx-bg);border-bottom:1px solid var(--amber-dim)}
 .tool-plan-tracer #ctx.show{display:flex}
-.tool-plan-tracer #ctx .tile{border-color:var(--amber-dim);background:rgba(255,176,32,.05)}
+.tool-plan-tracer #ctx .tile{border-color:var(--amber-dim);background:var(--card-hover)}
 .tool-plan-tracer #ctx .cap{color:var(--amber)}
 .tool-plan-tracer #ctx .lbl{font-size:11px;color:var(--muted);display:flex;align-items:center;gap:6px}
 .tool-plan-tracer .card{border:1px solid var(--line);border-radius:6px;padding:10px;background:rgba(255,255,255,.02)}
 .tool-plan-tracer #propCard{border-color:var(--amber);background:var(--amber-dim)}
 .tool-plan-tracer #propCard.idle{border-color:var(--line);background:rgba(255,255,255,.02)}
-.tool-plan-tracer .h{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.16em;
+.tool-plan-tracer .h{font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.16em;
   text-transform:uppercase;color:var(--muted);margin:0 0 8px}
 .tool-plan-tracer #propCard .h{color:var(--amber)}
 .tool-plan-tracer #propCard.idle .h{color:var(--muted)}
@@ -132,37 +134,37 @@
 .tool-plan-tracer .muted b{color:var(--text);font-weight:500}
 .tool-plan-tracer aside .tbtn{width:100%;margin-bottom:6px}
 .tool-plan-tracer aside .row .num{width:54px}
-.tool-plan-tracer .danger{color:#FF7A6B;border-color:color-mix(in srgb, #FF7A6B 35%, var(--line))}
-.tool-plan-tracer .danger:hover{background:color-mix(in srgb, #FF7A6B 15%, transparent);border-color:#FF7A6B}
+.tool-plan-tracer .danger{color:var(--error);border-color:var(--border)}
+.tool-plan-tracer .danger:hover{background:var(--error-bg);border-color:var(--error)}
 
 /* ---------- symbol library ---------- */
 .tool-plan-tracer #symgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:5px}
-.tool-plan-tracer .symbtn{aspect-ratio:1;border:1px solid var(--line);border-radius:4px;background:#FAFAF7;
-  cursor:pointer;padding:3px;color:#12161C}
+.tool-plan-tracer .symbtn{aspect-ratio:1;border:1px solid var(--line);border-radius:4px;background:var(--chrome-2);
+  cursor:pointer;padding:3px;color:var(--text)}
 .tool-plan-tracer .symbtn:hover{border-color:var(--amber)}
 .tool-plan-tracer .symbtn.on{outline:2px solid var(--amber);outline-offset:1px}
 .tool-plan-tracer .symbtn svg{width:100%;height:100%;display:block}
 
 /* ---------- stage ---------- */
-.tool-plan-tracer #stagewrap{flex:1;position:relative;min-width:0;background:#0D1014}
+.tool-plan-tracer #stagewrap{flex:1;position:relative;min-width:0;background:var(--chrome)}
 .tool-plan-tracer #stage{width:100%;height:100%;display:block;cursor:crosshair;touch-action:none}
 .tool-plan-tracer #stage.pan{cursor:grab}
-.tool-plan-tracer #hud{position:absolute;left:10px;bottom:10px;font-family:'IBM Plex Mono',monospace;font-size:10px;
-  color:#8A93A3;background:rgba(13,16,20,.82);border:1px solid var(--line);
+.tool-plan-tracer #hud{backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);position:absolute;left:10px;bottom:10px;font-family:'JetBrains Mono',monospace;font-size:10px;
+  color:var(--muted);background:var(--bg-glass);border:1px solid var(--line);
   border-radius:3px;padding:4px 8px;pointer-events:none}
-.tool-plan-tracer #hint{position:absolute;left:50%;transform:translateX(-50%);bottom:10px;font-size:11px;
-  color:#8A93A3;background:rgba(13,16,20,.82);border:1px solid var(--line);
+.tool-plan-tracer #hint{backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);position:absolute;left:50%;transform:translateX(-50%);bottom:10px;font-size:11px;
+  color:var(--muted);background:var(--bg-glass);border:1px solid var(--line);
   border-radius:3px;padding:4px 10px;pointer-events:none}
 .tool-plan-tracer #empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
   flex-direction:column;gap:10px;color:var(--muted);pointer-events:none;text-align:center}
-.tool-plan-tracer #empty b{color:#D4DAE2;font-weight:500;font-size:13px}
+.tool-plan-tracer #empty b{color:var(--text);font-weight:500;font-size:13px}
 .tool-plan-tracer #empty p{font-size:11px;max-width:260px;line-height:1.6}
 .tool-plan-tracer #toast{position:absolute;top:12px;left:50%;transform:translateX(-50%);display:none;
   background:var(--chrome-2);border:1px solid var(--amber);color:var(--text);font-size:12px;
   border-radius:5px;padding:8px 14px;max-width:420px;line-height:1.5;
   box-shadow:0 8px 24px rgba(0,0,0,.5)}
 .tool-plan-tracer #toast.show{display:block}
-.tool-plan-tracer #toast.err{border-color:#FF7A6B}
+.tool-plan-tracer #toast.err{border-color:var(--error)}
 .tool-plan-tracer #drop{position:absolute;inset:8px;display:none;align-items:center;justify-content:center;
   border:2px dashed var(--amber);border-radius:8px;background:rgba(255,176,32,.08);
   color:var(--amber);font-size:14px;pointer-events:none}
@@ -172,9 +174,9 @@
 }
 
 /* ---------- busy + ask dialogs ---------- */
-.tool-plan-tracer #busyBg, .tool-plan-tracer #askBg, .tool-plan-tracer #canvasBg{position:fixed;inset:0;background:rgba(8,10,13,.72);display:none;
+.tool-plan-tracer #busyBg, .tool-plan-tracer #askBg, .tool-plan-tracer #canvasBg, .tool-plan-tracer #textBg{position:fixed;inset:0;background:rgba(8,10,13,.72);display:none;
   align-items:center;justify-content:center;z-index:60;padding:20px}
-.tool-plan-tracer #busyBg.show, .tool-plan-tracer #askBg.show, .tool-plan-tracer #canvasBg.show{display:flex}
+.tool-plan-tracer #busyBg.show, .tool-plan-tracer #askBg.show, .tool-plan-tracer #canvasBg.show,.tool-plan-tracer #textBg.show{display:flex}
 .tool-plan-tracer #busyBox{display:flex;align-items:center;gap:14px;background:var(--chrome);
   border:1px solid var(--amber);border-radius:8px;padding:18px 22px;
   box-shadow:0 24px 60px rgba(0,0,0,.6);max-width:380px}
@@ -186,7 +188,7 @@
 @keyframes sp{to{transform:rotate(360deg)}}
 .tool-plan-tracer #askBox{background:var(--chrome);border:1px solid var(--line);border-radius:8px;
   padding:18px 20px;width:min(420px,100%);box-shadow:0 24px 60px rgba(0,0,0,.6)}
-.tool-plan-tracer #askBox h2{font-family:'IBM Plex Mono',monospace;font-size:12px;letter-spacing:.16em;
+.tool-plan-tracer #askBox h2{font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.16em;
   text-transform:uppercase;color:var(--amber);font-weight:600;margin-bottom:8px}
 .tool-plan-tracer #askBox p{font-size:12px;color:var(--muted);line-height:1.6;margin-bottom:14px}
 .tool-plan-tracer #askBtns{display:flex;gap:8px;justify-content:flex-end}
@@ -204,7 +206,7 @@
   box-shadow:0 24px 60px rgba(0,0,0,.6)}
 .tool-plan-tracer #keysBox header{display:flex;align-items:center;justify-content:space-between;
   padding:14px 18px;border-bottom:1px solid var(--line)}
-.tool-plan-tracer #keysBox h2{font-family:'IBM Plex Mono',monospace;font-size:12px;letter-spacing:.16em;
+.tool-plan-tracer #keysBox h2{font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.16em;
   text-transform:uppercase;color:var(--amber);font-weight:600}
 .tool-plan-tracer #keysX{background:none;border:0;color:var(--muted);font-size:20px;cursor:pointer;line-height:1}
 .tool-plan-tracer #keysX:hover{color:var(--text)}
@@ -212,15 +214,18 @@
   display:grid;grid-template-columns:1fr 1fr;gap:0 34px}
 .tool-plan-tracer #keysBox footer{padding:10px 18px;border-top:1px solid var(--line);
   font-size:11px;color:var(--muted)}
-.tool-plan-tracer .kgrp{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.14em;
+.tool-plan-tracer .kgrp{font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.14em;
   text-transform:uppercase;color:var(--muted);margin:14px 0 6px;
   border-bottom:1px solid var(--line);padding-bottom:5px}
 .tool-plan-tracer .krow{display:flex;align-items:baseline;gap:10px;padding:3px 0;font-size:12px}
 .tool-plan-tracer .krow span{color:var(--muted);flex:1}
 .tool-plan-tracer .keys{flex:none;display:flex;gap:3px}
-.tool-plan-tracer kbd{font-family:'IBM Plex Mono',monospace;font-size:10px;background:var(--chrome-2);
+.tool-plan-tracer kbd{font-family:'JetBrains Mono',monospace;font-size:10px;background:var(--chrome-2);
   border:1px solid var(--line);border-bottom-width:2px;border-radius:3px;
   padding:2px 5px;color:var(--text);min-width:18px;text-align:center}
 @media (max-width:620px) {
 .tool-plan-tracer #keysBody{grid-template-columns:1fr}
 }
+
+
+.tool-plan-tracer #paper{stroke:var(--line);stroke-width:1;vector-effect:non-scaling-stroke}
