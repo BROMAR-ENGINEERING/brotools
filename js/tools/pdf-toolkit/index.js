@@ -10,8 +10,9 @@
 // its ESM/bundled builds don't handle the worker reliably. That global is an
 // internal detail of this module, not something the hub needs or sets.
 //
-// Features: split (ZIP + filename tokens), combine, per-page rotate, draggable
-// crop handles, greyscale/B&W tone conversion, text + image watermarks, reorder.
+// Features: image → PDF (dropped images become pages), split (ZIP + filename
+// tokens), combine, per-page rotate, draggable crop handles, greyscale/B&W tone
+// conversion, text + image watermarks, reorder.
 
 const CDN = {
   pdfLib: 'https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js',
@@ -98,8 +99,8 @@ export async function mount(container) {
       <div class="ptk-spacer"></div>
       <button id="ptk-selAll">Select all</button>
       <button id="ptk-selNone">Clear</button>
-      <label class="btn" for="ptk-file">Add PDFs</label>
-      <input id="ptk-file" type="file" accept="application/pdf" multiple hidden>
+      <label class="btn" for="ptk-file">Add PDFs / images</label>
+      <input id="ptk-file" type="file" accept="application/pdf,image/*" multiple hidden>
     </div>
     <div class="ptk-main">
       <section class="ptk-bench" id="ptk-bench">
@@ -108,7 +109,7 @@ export async function mount(container) {
         <svg class="corner bl" viewBox="0 0 12 12" fill="none"><path d="M0 12h12M0 12V0"/></svg>
         <svg class="corner br" viewBox="0 0 12 12" fill="none"><path d="M12 12H0M12 12V0"/></svg>
         <div class="ptk-drop" id="ptk-drop">
-          <h2>Drop PDFs here</h2>
+          <h2>Drop PDFs or images here</h2>
           <div class="eyebrow">click a page to edit it on its own · drag to reorder</div>
         </div>
         <div class="ptk-grid" id="ptk-grid"></div>
@@ -274,24 +275,51 @@ export async function mount(container) {
   ['dragover', 'dragenter'].forEach(t => on(document, t, e => { e.preventDefault(); dz.classList.add('hot'); }));
   ['dragleave', 'drop'].forEach(t => on(document, t, e => { e.preventDefault(); dz.classList.remove('hot'); }));
   on(document, 'drop', e => {
-    const f = [...(e.dataTransfer?.files || [])].filter(f => f.type === 'application/pdf');
+    const f = [...(e.dataTransfer?.files || [])].filter(f => f.type === 'application/pdf' || /^image\//.test(f.type));
     if (f.length) addFiles(f);
   });
+
+  // turn an uploaded image into a one-page PDF so it flows through the rest of the pipeline
+  async function imageToPdfBytes(file) {
+    const url = mkURL(file);
+    const el = new Image(); el.src = url;
+    try { await el.decode(); } finally { URL.revokeObjectURL(url); urls.delete(url); }
+    const W = el.naturalWidth, H = el.naturalHeight;
+    const cv = document.createElement('canvas');
+    cv.width = W; cv.height = H;
+    const cx = cv.getContext('2d');
+    const png = file.type === 'image/png';
+    if (!png) { cx.fillStyle = '#fff'; cx.fillRect(0, 0, W, H); }  // flatten transparency for JPEG
+    cx.drawImage(el, 0, 0);
+    const blob = await new Promise(r => cv.toBlob(r, png ? 'image/png' : 'image/jpeg', .92));
+    const imgBytes = new Uint8Array(await blob.arrayBuffer());
+    const out = await PDFDocument.create();
+    const img = png ? await out.embedPng(imgBytes) : await out.embedJpg(imgBytes);
+    const landscape = W > H;                        // fit onto an A4 page, image centred
+    const pw = landscape ? 841.89 : 595.28, ph = landscape ? 595.28 : 841.89;
+    const page = out.addPage([pw, ph]);
+    const scale = Math.min(pw / W, ph / H), w = W * scale, h = H * scale;
+    page.drawImage(img, { x: (pw - w) / 2, y: (ph - h) / 2, width: w, height: h });
+    return out.save();
+  }
   async function addFiles(files) {
     for (const f of files) {
+      const isImg = /^image\//.test(f.type);
       try {
-        say('Reading ' + f.name + '…');
-        const bytes = new Uint8Array(await f.arrayBuffer());
+        say((isImg ? 'Converting ' : 'Reading ') + f.name + '…');
+        const bytes = isImg ? await imageToPdfBytes(f) : new Uint8Array(await f.arrayBuffer());
         const js = await pdfjsLib.getDocument({ data: bytes.slice() }).promise;
         const id = 'd' + (uid++);
-        docs.set(id, { name: f.name.replace(/\.pdf$/i, ''), bytes, js });
+        docs.set(id, { name: f.name.replace(/\.[^.]+$/, ''), bytes, js });
         for (let i = 0; i < js.numPages; i++) {
           let r = (await js.getPage(i + 1)).rotate || 0;
           r = ((Math.round(r / 90) * 90) % 360 + 360) % 360;
           pages.push({ uid: 'p' + (uid++), docId: id, i, rot0: r, sel: false, s: defaults() });
         }
-        say(f.name + ' — ' + js.numPages + ' pages added.');
-      } catch { say("Couldn't read " + f.name + '. It may be encrypted or damaged.', true); }
+        say(f.name + (isImg ? ' — added as a page.' : ' — ' + js.numPages + ' pages added.'));
+      } catch {
+        say("Couldn't read " + f.name + (isImg ? '. That image format may not be supported — try PNG or JPG.' : '. It may be encrypted or damaged.'), true);
+      }
     }
     draw();
   }
