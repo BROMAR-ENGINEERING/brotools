@@ -72,6 +72,21 @@ export function mount(container){
     document.head.appendChild(_cssLink);
   }
 
+  // canvas overlay colours, read live from the themed tokens so selection,
+  // snap and guide marks are Ops orange and follow light/dark.
+  let C = {};
+  function refreshColors(){
+    const cs = getComputedStyle(container);
+    const g = (n,f) => { const v = cs.getPropertyValue(n).trim(); return v || f; };
+    C = { a:   g('--accent',        '#ea580c'),
+          a2:  g('--accent-light',  '#fb923c'),
+          err: g('--error',         '#dc2626') };
+  }
+  refreshColors();
+  // re-read colours and repaint if the hub toggles light/dark while mounted
+  const _themeObs = new MutationObserver(() => { refreshColors(); if (typeof render === 'function') render(); });
+  _themeObs.observe(document.documentElement, { attributes:true, attributeFilter:['data-theme'] });
+
 
   /* =========================================================================
      SYMBOL LIBRARIES
@@ -260,7 +275,7 @@ export function mount(container){
          <input class="num" id="rad" type="number" min="0" max="500" step="1" value="${S.rad}" title="0 removes it">`;
     } else if(S.tool==='symbol'){
       const d=findSym(S.sym)||{svg:'',name:''};
-      h=`<svg viewBox="-18 -18 36 36" width="22" height="22" fill="none" stroke="#FFB020"
+      h=`<svg viewBox="-18 -18 36 36" width="22" height="22" fill="none" stroke="${C.a}"
             stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="align-self:center">${d.svg}</svg>
          <span class="cap" style="align-self:center">Size %</span>
          <input class="num" id="symScale" type="number" min="20" max="600" step="5"
@@ -454,21 +469,26 @@ export function mount(container){
         ? {x:p.x, y:last.y} : {x:last.x, y:p.y};
     };
 
+    // With ortho on you can only hard-connect to an anchor that actually lies
+    // on the H/V line from `last` — anything off-axis would break the lock.
+    // `reach` is true when the ortho-projected point still lands on the anchor;
+    // off-axis anchors fall through to the alignment-guide system instead,
+    // which lines the free axis up with the anchor and draws the arrow to it.
+    const reach = (v) => !o || Math.hypot(lock(v).x - v.x, lock(v).y - v.y) <= 2.5*k;
+
     if(S.snapG){
-      // a corner still wins — you meant to connect to it — but the radius is
-      // tight so it can't steal points you wanted on the grid
       if(S.snapA){
         const v=nearestVertex(raw, 9*k, skip);
-        if(v) return {p:v, kind:'vertex'};
+        if(v && reach(v)) return {p:lock(v), kind:'vertex'};
       }
       const g=S.gridSize;
       return {p:lock({x:Math.round(raw.x/g)*g, y:Math.round(raw.y/g)*g}), kind:'grid'};
     }
     if(S.snapA){
       const v=nearestVertex(raw,12*k,skip);
-      if(v) return {p:v, kind:'vertex'};
+      if(v && reach(v)) return {p:lock(v), kind:'vertex'};
       const s=nearestSeg(raw,10*k);
-      if(s) return {p:{x:s.x,y:s.y}, kind:'edge'};
+      if(s && reach({x:s.x,y:s.y})) return {p:lock({x:s.x,y:s.y}), kind:'edge'};
     }
     const base=lock({x:raw.x,y:raw.y});
     const a=alignPoint(base,last,o,e&&e.altKey);
@@ -672,7 +692,7 @@ export function mount(container){
       return `<circle data-id="${el.id}" cx="${el.x}" cy="${el.y}" r="${el.r}" ${st}/>`;
     if(el.type==='text')
       return `<text data-id="${el.id}" x="${el.x}" y="${el.y}" fill="${el.color}" stroke="none"
-        font-size="${el.size}" font-family="IBM Plex Sans, sans-serif">${esc(el.txt)}</text>`;
+        font-size="${el.size}" font-family="Outfit, sans-serif">${esc(el.txt)}</text>`;
     if(el.type==='symbol'){
       const d=findSym(el.sym)||{svg:''};
       const q=symXY(el);
@@ -688,10 +708,10 @@ export function mount(container){
           ${d.svg}
         </g>
         ${(lab&&d.inner)?`<text x="0" y="${4*el.scale}" text-anchor="middle" font-size="${11*el.scale}"
-          fill="currentColor" stroke="none" font-family="IBM Plex Sans, sans-serif"
+          fill="currentColor" stroke="none" font-family="Outfit, sans-serif"
           transform="rotate(${-q.rot})">${esc(el.label)}</text>`:''}
         ${(lab&&!d.inner)?`<text x="${el.nx||0}" y="${(el.ny??26)*el.scale}" text-anchor="middle" font-size="11"
-          fill="currentColor" stroke="none" font-family="IBM Plex Sans, sans-serif"
+          fill="currentColor" stroke="none" font-family="Outfit, sans-serif"
           transform="rotate(${-q.rot} ${el.nx||0} ${(el.ny??26)*el.scale})">${esc(el.label)}</text>`:''}
       </g>`;
     }
@@ -760,7 +780,7 @@ export function mount(container){
         const pts=[...S.draft.pts,...(S.draft.cur?[S.draft.cur]:[])];
         o+=`<path d="M${pts.map(p=>`${p.x} ${p.y}`).join('L')}" stroke="${S.color}" stroke-width="${S.weight}"
           fill="none" stroke-dasharray="${6*k} ${4*k}"/>`;
-        o+=S.draft.pts.map(p=>`<circle cx="${p.x}" cy="${p.y}" r="${3.5*k}" fill="#FFB020"/>`).join('');
+        o+=S.draft.pts.map(p=>`<circle cx="${p.x}" cy="${p.y}" r="${3.5*k}" fill="${C.a}"/>`).join('');
       }
       if(S.draft.type==='arc'){
         const [a]=S.draft.pts;
@@ -769,7 +789,7 @@ export function mount(container){
           o+=`<path d="${arcD(prev)}" stroke="${S.color}" stroke-width="${S.weight}"
             fill="none" stroke-dasharray="${6*k} ${4*k}"/>`;
           o+=`<line x1="${a.x}" y1="${a.y}" x2="${a.x+S.draft.tan.x*40*k}" y2="${a.y+S.draft.tan.y*40*k}"
-            stroke="#2BD9C8" stroke-width="${1*k}" stroke-dasharray="${4*k} ${4*k}"/>`;
+            stroke="${C.a2}" stroke-width="${1*k}" stroke-dasharray="${4*k} ${4*k}"/>`;
         } else {
           if(S.draft.pts.length===1 && S.draft.cur)
             o+=`<line x1="${a.x}" y1="${a.y}" x2="${S.draft.cur.x}" y2="${S.draft.cur.y}"
@@ -778,7 +798,7 @@ export function mount(container){
             o+=`<path d="${arcD(S.draft)}" stroke="${S.color}" stroke-width="${S.weight}"
               fill="none" stroke-dasharray="${6*k} ${4*k}"/>`;
         }
-        o+=S.draft.pts.map(p=>`<circle cx="${p.x}" cy="${p.y}" r="${3.5*k}" fill="#FFB020"/>`).join('');
+        o+=S.draft.pts.map(p=>`<circle cx="${p.x}" cy="${p.y}" r="${3.5*k}" fill="${C.a}"/>`).join('');
       }
       if(S.draft.type==='rect') o+=`<rect x="${S.draft.x}" y="${S.draft.y}" width="${S.draft.w}" height="${S.draft.h}"
         stroke="${S.color}" stroke-width="${S.weight}" fill="none" stroke-dasharray="${6*k} ${4*k}"/>`;
@@ -786,7 +806,7 @@ export function mount(container){
         stroke="${S.color}" stroke-width="${S.weight}" fill="none" stroke-dasharray="${6*k} ${4*k}"/>`;
     }
     if(S.guideL?.length) o+=S.guideL.map(g=>{
-      const col = g.start ? '#FFB020' : '#2BD9C8';
+      const col = g.start ? '${C.a}' : '${C.a2}';
       // arrow points from the current position back toward the anchor it lines up with
       let dx=g.x1-g.x2, dy=g.y1-g.y2;
       const L=Math.hypot(dx,dy)||1; dx/=L; dy/=L;
@@ -803,7 +823,7 @@ export function mount(container){
     }).join('');
     if(S.snapHit){
       const grid = S.snapKind==='grid';
-      const col = grid ? '#2BD9C8' : '#FFB020';
+      const col = grid ? '${C.a2}' : '${C.a}';
       o+=`<circle cx="${S.snapHit.x}" cy="${S.snapHit.y}" r="${13*k}" fill="${col}" opacity=".16"/>`;
       o+= grid
         ? `<path d="M${S.snapHit.x-8*k} ${S.snapHit.y}h${16*k}M${S.snapHit.x} ${S.snapHit.y-8*k}v${16*k}"
@@ -812,12 +832,12 @@ export function mount(container){
              stroke="${col}" stroke-width="${1.5*k}"/>`;
     }
     if(S.joinA) o+=`<circle cx="${S.joinA.x}" cy="${S.joinA.y}" r="${9*k}" fill="none"
-      stroke="#2BD9C8" stroke-width="${1.8*k}"/><circle cx="${S.joinA.x}" cy="${S.joinA.y}"
-      r="${3*k}" fill="#2BD9C8"/>`;
+      stroke="${C.a2}" stroke-width="${1.8*k}"/><circle cx="${S.joinA.x}" cy="${S.joinA.y}"
+      r="${3*k}" fill="${C.a2}"/>`;
     // highlight the actual selected shapes (a fat translucent copy behind them),
     // so it's obvious what's picked — not just a dashed bounding box
     const hi = S.sel.map(s=>{
-      const g=svgOf(s).replace(/stroke="[^"]*"/,'stroke="#FFB020"')
+      const g=svgOf(s).replace(/stroke="[^"]*"/,'stroke="${C.a}"')
         .replace(/stroke-width="[^"]*"/,`stroke-width="${(s.weight||2)+6*k}"`)
         .replace(/data-id="[^"]*"/,'');
       return `<g opacity=".28">${g}</g>`;
@@ -829,20 +849,20 @@ export function mount(container){
       if(nodeMode) continue;                      // node mode shows nodes, not a move box
       const b=bbox(s), m=8*k;
       o+=`<rect x="${b.x-m}" y="${b.y-m}" width="${b.w+m*2}" height="${b.h+m*2}" fill="none"
-        stroke="#FFB020" stroke-width="${1.2*k}" stroke-dasharray="${5*k} ${3*k}"/>`;
+        stroke="${C.a}" stroke-width="${1.2*k}" stroke-dasharray="${5*k} ${3*k}"/>`;
     }
     // a picked segment, ready for Delete
     if(S.segSel && S.segSel.el.pts){
       const a=S.segSel.el.pts[S.segSel.i], b=S.segSel.el.pts[S.segSel.i+1];
       if(a&&b) o+=`<line x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}"
-        stroke="#FF7A6B" stroke-width="${4*k}" opacity=".7" stroke-linecap="round"/>`;
+        stroke="${C.err}" stroke-width="${4*k}" opacity=".7" stroke-linecap="round"/>`;
     }
     // vertex handles: in node mode for the active line, or when a single shape is picked
     const one=sel1();
     if(one?.pts) o+=one.pts.map(p=>{
       const r=(nodeMode?4.5:3.5)*k;
       return `<rect x="${p.x-r}" y="${p.y-r}" width="${r*2}" height="${r*2}"
-        fill="${nodeMode?'#FFB020':'#FAFAF7'}" stroke="${nodeMode?'#12161C':'#FFB020'}" stroke-width="${1.2*k}"/>`;
+        fill="${nodeMode?'${C.a}':'#FAFAF7'}" stroke="${nodeMode?'#12161C':'${C.a}'}" stroke-width="${1.2*k}"/>`;
     }).join('');
     // show which corners can be filleted while those tools are up
     if(S.tool==='fillet'||S.tool==='chamfer'){
@@ -851,7 +871,7 @@ export function mount(container){
         for(let i=1;i<el.pts.length-1;i++){
           const on=el.corners?.[i];
           o+=`<circle cx="${el.pts[i].x}" cy="${el.pts[i].y}" r="${5*k}" fill="none"
-            stroke="${on?'#FFB020':'#2BD9C8'}" stroke-width="${1.2*k}" opacity=".85"/>`;
+            stroke="${on?'${C.a}':'${C.a2}'}" stroke-width="${1.2*k}" opacity=".85"/>`;
         }
       }
     }
@@ -861,7 +881,7 @@ export function mount(container){
         if(!el.pts) continue;
         for(const p of el.pts)
           o+=`<circle cx="${p.x}" cy="${p.y}" r="${4*k}" fill="none"
-            stroke="#2BD9C8" stroke-width="${1.1*k}" opacity=".7"/>`;
+            stroke="${C.a2}" stroke-width="${1.1*k}" opacity=".7"/>`;
       }
     }
     // free ends a tangent arc can spring from
@@ -870,24 +890,24 @@ export function mount(container){
         if(!el.pts||el.pts.length<2) continue;
         for(const p of [el.pts[0], el.pts.at(-1)])
           o+=`<circle cx="${p.x}" cy="${p.y}" r="${5*k}" fill="none"
-            stroke="#2BD9C8" stroke-width="${1.2*k}" opacity=".8"/>`;
+            stroke="${C.a2}" stroke-width="${1.2*k}" opacity=".8"/>`;
       }
     }
     if(S.bg && !$('#bgLock').checked){
       const b=S.bg;
       // the frame follows the image's own rotate/skew so the handles sit on it
       o+=`<g transform="${bgTransform(b)}">
-        <rect x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" fill="none" stroke="#2BD9C8"
+        <rect x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" fill="none" stroke="${C.a2}"
           stroke-width="${1.2*k}" stroke-dasharray="${8*k} ${5*k}"/>
-        <rect x="${b.x+b.w-6*k}" y="${b.y+b.h-6*k}" width="${12*k}" height="${12*k}" fill="#2BD9C8"/>
-        <line x1="${b.x+b.w/2}" y1="${b.y}" x2="${b.x+b.w/2}" y2="${b.y-26*k}" stroke="#2BD9C8" stroke-width="${1.2*k}"/>
-        <circle cx="${b.x+b.w/2}" cy="${b.y-26*k}" r="${6*k}" fill="#2BD9C8"/>
+        <rect x="${b.x+b.w-6*k}" y="${b.y+b.h-6*k}" width="${12*k}" height="${12*k}" fill="${C.a2}"/>
+        <line x1="${b.x+b.w/2}" y1="${b.y}" x2="${b.x+b.w/2}" y2="${b.y-26*k}" stroke="${C.a2}" stroke-width="${1.2*k}"/>
+        <circle cx="${b.x+b.w/2}" cy="${b.y-26*k}" r="${6*k}" fill="${C.a2}"/>
       </g>`;
     }
     if(S.marquee){
       const m=S.marquee, x=Math.min(m.x0,m.x1), y=Math.min(m.y0,m.y1),
             w=Math.abs(m.x1-m.x0), hgt=Math.abs(m.y1-m.y0);
-      const col=m.zoom?'#2BD9C8':'#FFB020';
+      const col=m.zoom?'${C.a2}':'${C.a}';
       o+=`<rect x="${x}" y="${y}" width="${w}" height="${hgt}" fill="${col}" fill-opacity=".08"
         stroke="${col}" stroke-width="${1*k}" stroke-dasharray="${5*k} ${3*k}"/>`;
     }
@@ -1891,7 +1911,7 @@ export function mount(container){
     const doc=`<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(docName())}</title>
   <style>
-  :root{--amber:#FFB020}
+  :root{--amber:#ea580c}
   *{box-sizing:border-box;margin:0}
   body{background:#0D1014;font-family:system-ui,sans-serif;height:100vh;overflow:hidden}
   svg{width:100%;height:100vh;display:block;touch-action:none;cursor:grab}
@@ -2036,11 +2056,12 @@ export function mount(container){
     })
     .catch(() => toast('Could not load symbol libraries — using the built-in set.', true));
 
-  _active = { container, listeners: _listeners };
+  _active = { container, listeners: _listeners, themeObs: _themeObs };
 }
 
 export function unmount(){
   if(!_active) return;
+  _active.themeObs?.disconnect();
   for(const [t, ev, fn, opt] of _active.listeners) t.removeEventListener(ev, fn, opt);
   try{ clearTimeout(_toastHandle); }catch{}
   _active.container.innerHTML = '';
