@@ -1796,13 +1796,22 @@ export function mount(container){
           <textarea id="pDet" placeholder="e.g. 4000K &middot; 32W &middot; Circuit L3">${esc(el.details)}</textarea>
           <div style="height:8px"></div>`;
       if(cuts){
-        // openings/doors/windows: width (along wall) and wall thickness are separate
-        const wPct=Math.round((el.sx??el.scale)*100), tPct=Math.round((el.sy??el.scale)*100);
-        h+=`<div class="row"><label>Width %</label><input type="range" id="pSx" min="20" max="600" value="${wPct}">
-              <input class="num" id="pSxN" type="number" min="20" max="600" step="5" value="${wPct}" style="width:52px"></div>
-            <div class="row"><label>Thickness</label><input type="range" id="pSy" min="20" max="600" value="${tPct}">
-              <input class="num" id="pSyN" type="number" min="20" max="600" step="5" value="${tPct}" style="width:52px"></div>
-            <div class="muted" style="margin:-2px 0 6px">Width sets the opening along the wall (and the gap it cuts); Thickness sets how far it reaches across the wall.</div>`;
+        // openings/doors/windows: locked (uniform) by default; unlock to set
+        // width (along the wall) and thickness (across it) independently
+        const locked = el.lockWH!==false;
+        h+=`<label class="chk"><input type="checkbox" id="pLock" ${locked?'checked':''}> Lock width &amp; thickness</label>`;
+        if(locked){
+          const pct=Math.round((el.sx??el.scale)*100);
+          h+=`<div class="row"><label>Size %</label><input type="range" id="pSc" min="20" max="600" value="${pct}">
+                <input class="num" id="pScN" type="number" min="20" max="600" step="5" value="${pct}" style="width:52px"></div>`;
+        } else {
+          const wPct=Math.round((el.sx??el.scale)*100), tPct=Math.round((el.sy??el.scale)*100);
+          h+=`<div class="row"><label>Width %</label><input type="range" id="pSx" min="20" max="600" value="${wPct}">
+                <input class="num" id="pSxN" type="number" min="20" max="600" step="5" value="${wPct}" style="width:52px"></div>
+              <div class="row"><label>Thickness</label><input type="range" id="pSy" min="20" max="600" value="${tPct}">
+                <input class="num" id="pSyN" type="number" min="20" max="600" step="5" value="${tPct}" style="width:52px"></div>
+              <div class="muted" style="margin:-2px 0 6px">Width sets the opening along the wall (and the gap it cuts); Thickness sets how far it reaches across the wall.</div>`;
+        }
       } else {
         h+=`<div class="row"><label>Size %</label><input type="range" id="pSc" min="20" max="600" value="${el.scale*100}">
               <input class="num" id="pScN" type="number" min="20" max="600" step="5" value="${Math.round(el.scale*100)}" style="width:52px"></div>`;
@@ -1884,7 +1893,7 @@ export function mount(container){
       n.oninput=ev=>{ if(first){push();first=false;} fn(ev.target.value); render(); };
     };
     bind('#pLab',v=>el.label=v); bind('#pDet',v=>el.details=v);
-    bind('#pSc',v=>{el.scale=v/100; S.symScale=el.scale; const n=$('#pScN'); if(n)n.value=Math.round(v);});
+    bind('#pSc',v=>{el.scale=v/100; S.symScale=el.scale; delete el.sx; delete el.sy; const n=$('#pScN'); if(n)n.value=Math.round(v);});
     bind('#pSx',v=>{el.sx=(+v||100)/100; if(el.sy===undefined) el.sy=el.scale; const n=$('#pSxN'); if(n)n.value=Math.round(v);});
     bind('#pSxN',v=>{el.sx=(+v||100)/100; if(el.sy===undefined) el.sy=el.scale; const n=$('#pSx'); if(n)n.value=Math.round(+v);});
     bind('#pSy',v=>{el.sy=(+v||100)/100; if(el.sx===undefined) el.sx=el.scale; const n=$('#pSyN'); if(n)n.value=Math.round(v);});
@@ -1911,6 +1920,15 @@ export function mount(container){
     if($('#pBold')) $('#pBold').onclick=()=>{push(); el.bold=!el.bold; S.textBold=el.bold; $('#pBold').classList.toggle('on',el.bold); render();};
     if($('#pItal')) $('#pItal').onclick=()=>{push(); el.italic=!el.italic; S.textItalic=el.italic; $('#pItal').classList.toggle('on',el.italic); render();};
     if($('#pShow')) $('#pShow').onchange=ev=>{push(); el.showLabel=ev.target.checked; render();};
+    if($('#pLock')) $('#pLock').onchange=ev=>{
+      push();
+      if(ev.target.checked){                        // lock: uniform, drop the split scales
+        el.lockWH=true; el.scale=(el.sx??el.scale); delete el.sx; delete el.sy;
+      } else {                                       // unlock: seed width/thickness from current size
+        el.lockWH=false; const s=el.sx??el.scale; el.sx=s; el.sy=el.sy??s;
+      }
+      render(); props();
+    };
     if($('#pMir'))  $('#pMir').onclick=()=>mirrorSel('mirror');
     if($('#pFlip')) $('#pFlip').onclick=()=>mirrorSel('flip');
     if($('#pSharp')) $('#pSharp').onclick=()=>{push(); delete el.corners; render(); props();};
