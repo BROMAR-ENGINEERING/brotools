@@ -1237,7 +1237,9 @@ export function mount(container){
         const h=nearestSeg(raw, 22*scale());
         if(h) el.host={id:h.id,seg:h.seg,d:h.d};
       }
-      S.els.push(el); S.sel=[el]; setTool('select'); render(); props(); return;
+      // stay in symbol mode so you can keep placing; the library item keeps its
+      // highlight. Switch to Select (V) when you want to move or edit one.
+      S.els.push(el); S.sel=[el]; render(); props(); return;
     }
     if(S.tool==='text'){
       const at={x:p.x,y:p.y};
@@ -1634,6 +1636,18 @@ export function mount(container){
   /* =========================================================================
      PROPERTIES
      ========================================================================= */
+  // make the weight + colour toolbar reflect a given element (no history / apply)
+  function syncToolbar(el){
+    if(el.weight!==undefined){
+      S.weight=el.weight;
+      $$('.wt').forEach(b=>b.classList.toggle('on', +b.dataset.w===S.weight));
+    }
+    if(el.color!==undefined){
+      S.color=el.color;
+      $$('.sw').forEach(b=>b.classList.toggle('on', b.dataset.c===S.color));
+    }
+    if(el.dash!==undefined){ const d=$('#dash'); if(d) d.value=el.dash; S.dash=el.dash; }
+  }
   function props(){
     const box=$('#props'), card=$('#propCard'), title=$('#propTitle');
     const idle = !S.sel.length;
@@ -1644,6 +1658,9 @@ export function mount(container){
       return;
     }
     const one=S.sel[0];
+    // reflect the selected item's weight/colour in the toolbar, so it always
+    // shows the clicked line's real settings (not the last value you set)
+    if(S.sel.length===1) syncToolbar(one);
     title.textContent = S.sel.length>1 ? `${S.sel.length} items`
       : one.type==='symbol' ? (findSym(one.sym)?.name || 'Symbol')
       : one.type==='poly' ? 'Line'
@@ -1651,12 +1668,23 @@ export function mount(container){
     if(S.sel.length>1){
       const n=S.sel.length;
       const grouped=S.sel.filter(x=>x.grp).length;
-      box.innerHTML=`<div class="muted"><b>${n} items selected.</b> Drag to move them together;
-        the colour and weight buttons apply to all of them.<br>
+      const syms=S.sel.filter(x=>x.type==='symbol');
+      const txts=S.sel.filter(x=>x.type==='text');
+      box.innerHTML=`<div class="muted"><b>${n} items selected.</b> Drag to move them together.
+        The <b>colour</b>, <b>weight</b> and <b>line-style</b> buttons in the toolbar apply to all of them at once.<br>
         ${grouped===n&&S.sel[0].grp&&S.sel.every(x=>x.grp===S.sel[0].grp)
           ? 'Grouped — points they share move as one joint.'
           : 'Not grouped. Group them to weld shared points together.'}</div>
         <div style="height:10px"></div>
+        ${syms.length?`<div class="h">All ${syms.length} symbol${syms.length>1?'s':''}</div>
+          <div class="row"><label>Set size</label>
+            <input class="num" id="bSize" type="number" min="20" max="600" step="5" placeholder="%" style="width:60px">
+            <button class="tbtn" id="bSizeGo" style="width:auto;flex:1">Apply to all</button></div>`:''}
+        ${txts.length?`<div class="h">All ${txts.length} text item${txts.length>1?'s':''}</div>
+          <div class="row"><label>Set size</label>
+            <input class="num" id="bTSize" type="number" min="8" max="120" step="1" placeholder="px" style="width:60px">
+            <button class="tbtn" id="bTSizeGo" style="width:auto;flex:1">Apply to all</button></div>`:''}
+        <div class="h">All items</div>
         <div class="row"><label>Rotate</label>
           <button class="tbtn" id="pRotL" style="width:auto;flex:1" title="Rotate 90° left">↺ 90°</button>
           <button class="tbtn" id="pRotR" style="width:auto;flex:1" title="Rotate 90° right">↻ 90°</button></div>
@@ -1667,6 +1695,16 @@ export function mount(container){
       $('#pRotL').onclick=()=>rotateSel(-90); $('#pRotR').onclick=()=>rotateSel(90);
       $('#pGrp').onclick=groupSel; $('#pUngrp').onclick=ungroupSel;
       $('#pDup').onclick=duplicate;
+      if($('#bSizeGo')) $('#bSizeGo').onclick=()=>{
+        const v=+$('#bSize').value; if(!v) return;
+        push(); syms.forEach(s=>{ s.scale=v/100; delete s.sx; delete s.sy; }); render();
+        toast(`All ${syms.length} symbols set to ${v}%.`);
+      };
+      if($('#bTSizeGo')) $('#bTSizeGo').onclick=()=>{
+        const v=+$('#bTSize').value; if(!v) return;
+        push(); txts.forEach(t=>t.size=v); render();
+        toast(`All ${txts.length} text items set to ${v}px.`);
+      };
       $('#pDel').onclick=()=>{push();S.els=S.els.filter(x=>!S.sel.includes(x));S.sel=[];render();props();};
       return;
     }
