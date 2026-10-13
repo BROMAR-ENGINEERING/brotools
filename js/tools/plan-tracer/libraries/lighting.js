@@ -27,6 +27,7 @@ PlanTracer.registerLibrary({
     wall:       {name:'Wall light',  svg:`<path d="M-12 8H12"/><path d="M-7 8a7 7 0 0 1 14 0" fill="currentColor" fill-opacity=".15"/>`},
     track:      {name:'Track / spot',svg:`<path d="M-14-8H14"/><circle cx="-7" cy="0" r="4"/><circle cx="7" cy="0" r="4"/><path d="M-7-8v4M7-8v4"/>`},
     emergency:  {name:'Emergency',   svg:`<circle cx="0" cy="0" r="10"/><path d="M-4-5h8M0-5v10M-4 5h8" stroke-width="2"/>`},
+    emgTwin:    {name:'Emergency twin spot', svg:`<rect x="-12" y="2" width="24" height="7" rx="1"/><circle cx="-6" cy="-4" r="4"/><circle cx="6" cy="-4" r="4"/><path d="M-6 0v2M6 0v2"/>`},
     exitsign:   {name:'Exit sign',   svg:`<rect x="-14" y="-7" width="28" height="14"/><path d="M-8-2h6M-8 2h6M-8-2v4"/><path d="M2 0h9M7-4l4 4-4 4"/>`},
     exitR:      {name:'Exit → (right)', svg:`<rect x="-14" y="-8" width="28" height="16" rx="1.5"/><path d="M-9 0H6"/><path d="M3-5l5 5-5 5"/>`},
     exitL:      {name:'Exit ← (left)',  svg:`<rect x="-14" y="-8" width="28" height="16" rx="1.5"/><path d="M9 0H-6"/><path d="M-3-5l-5 5 5 5"/>`},
