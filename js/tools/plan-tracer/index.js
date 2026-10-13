@@ -116,7 +116,8 @@ export function mount(container){
     els:[], bg:null, bgHidden:false, hideDrawing:false,
     textSize:16, textFont:'sans', textAlign:'start', textBold:false, textItalic:false,
     draft:null, sel:[], snapHit:null, snapKind:null, joinA:null, dirty:false,
-    viewLock:false, marquee:null, segSel:null,
+    viewLock:false, marquee:null, segSel:null, stamp:null,
+    autosave:true, pendingBg:null, bgName:'',
     paperX:0, paperY:0,
     view:{x:0,y:0,w:PAPER_W,h:PAPER_H}, undo:[], redo:[]
   };
@@ -252,6 +253,7 @@ export function mount(container){
   function setTool(t){
     if(S.draft) finishDraft();
     S.joinA=null; S.segSel=null;
+    if(t!=='stamp') S.stamp=null;                 // leaving stamp mode drops the template
     S.tool=t; if(t!=='select'&&t!=='marquee'&&t!=='node'&&t!=='zoombox') S.sel=[];
     $$('[data-tool]').forEach(b=>b.classList.toggle('on',b.dataset.tool===t));
     stage.classList.toggle('pan',t==='pan'||t==='marquee'||t==='zoombox');
@@ -261,6 +263,7 @@ export function mount(container){
       marquee:'Drag a box over the objects to select them',
       zoombox:'Drag a box over the area you want to zoom into',
       crop:'Drag a sheet edge or corner to resize · drag inside to move the sheet over your drawing',
+      stamp:'Click to place copies of the item · Esc to stop',
       line:'Click each corner · landing on existing work ends the run · Esc to finish',
       arc:'Click the two ends, then move to set the bulge and click again',
       arctan:'Click the free end of a line or arc, then click where the curve should finish',
@@ -1227,6 +1230,14 @@ export function mount(container){
     }
     if(S.tool==='rect'){ down.draw=1; S.draft={type:'rect',x:p.x,y:p.y,w:0,h:0}; return; }
     if(S.tool==='circle'){ down.draw=1; S.draft={type:'circle',x:p.x,y:p.y,r:0}; return; }
+    if(S.tool==='stamp'){
+      if(!S.stamp){ setTool('select'); return; }
+      if(S.stamp.editText){
+        const at={x:p.x,y:p.y};
+        askText(S.stamp.tpl.txt||'').then(t=>{ if(t==null||!t.trim())return; placeStamp(at,t); });
+      } else placeStamp(p);
+      return;
+    }
     if(S.tool==='symbol'){
       push();
       const def=findSym(S.sym);
@@ -1482,6 +1493,50 @@ export function mount(container){
     });
     S.els.push(...copies); S.sel=copies; render(); props();
   }
+  /* ---- stamp: place copies of one formatted item until Esc -------------- */
+  function startStamp(el, editText){
+    S.stamp = { tpl: JSON.parse(JSON.stringify(el)), editText: editText && el.type==='text' };
+    setTool('stamp');
+    toast(S.stamp.editText
+      ? 'Click to place a copy and type its text · Esc to stop'
+      : 'Click to place copies · Esc to stop');
+  }
+  function placeStamp(p, txt){
+    push();
+    const c=JSON.parse(JSON.stringify(S.stamp.tpl));
+    c.id=uid(); delete c.host; delete c.grp;
+    if(c.pts){                                   // lines/arcs: recentre on the click
+      let cx=0,cy=0; c.pts.forEach(q=>{cx+=q.x;cy+=q.y;}); cx/=c.pts.length; cy/=c.pts.length;
+      c.pts.forEach(q=>{q.x+=p.x-cx; q.y+=p.y-cy;});
+    } else { c.x=p.x; c.y=p.y; }
+    if(c.type==='symbol' && findSym(c.sym)?.cut){ const h=nearestSeg(p,22*scale()); if(h) c.host={id:h.id,seg:h.seg,d:h.d}; }
+    if(txt!==undefined) c.txt=txt;
+    S.els.push(c); S.sel=[c]; render(); props();
+  }
+  // move one element by (dx,dy) — hosted symbols stay on their wall
+  function shiftEl(el,dx,dy){
+    if(el.type==='symbol'&&el.host) return;
+    if(el.pts) el.pts.forEach(p=>{p.x+=dx;p.y+=dy;});
+    else { el.x=(el.x||0)+dx; el.y=(el.y||0)+dy; }
+  }
+  // align the selection: left/hcentre/right (X) or top/vmiddle/bottom (Y)
+  function alignSel(mode){
+    const items=S.sel.filter(el=>!(el.type==='symbol'&&el.host));
+    if(items.length<2){ toast('Select two or more free items to align.',true); return; }
+    push();
+    const o=items.map(el=>({el,b:bbox(el)}));
+    const L=Math.min(...o.map(q=>q.b.x)), R=Math.max(...o.map(q=>q.b.x+q.b.w));
+    const T=Math.min(...o.map(q=>q.b.y)), B=Math.max(...o.map(q=>q.b.y+q.b.h));
+    for(const q of o){
+      if(mode==='left')    shiftEl(q.el, L-q.b.x, 0);
+      if(mode==='right')   shiftEl(q.el, R-(q.b.x+q.b.w), 0);
+      if(mode==='hcentre') shiftEl(q.el, (L+R)/2-(q.b.x+q.b.w/2), 0);
+      if(mode==='top')     shiftEl(q.el, 0, T-q.b.y);
+      if(mode==='bottom')  shiftEl(q.el, 0, B-(q.b.y+q.b.h));
+      if(mode==='vmiddle') shiftEl(q.el, 0, (T+B)/2-(q.b.y+q.b.h/2));
+    }
+    render(); props();
+  }
   function nudge(dx,dy){
     if(!S.sel.length) return;
     push();
@@ -1684,6 +1739,15 @@ export function mount(container){
           <div class="row"><label>Set size</label>
             <input class="num" id="bTSize" type="number" min="8" max="120" step="1" placeholder="px" style="width:60px">
             <button class="tbtn" id="bTSizeGo" style="width:auto;flex:1">Apply to all</button></div>`:''}
+        <div class="h">Align</div>
+        <div class="row" style="gap:4px">
+          <button class="tbtn" id="alL" style="width:auto;flex:1" title="Align left edges">⇤ L</button>
+          <button class="tbtn" id="alHC" style="width:auto;flex:1" title="Align horizontal centres">⇔ C</button>
+          <button class="tbtn" id="alR" style="width:auto;flex:1" title="Align right edges">R ⇥</button></div>
+        <div class="row" style="gap:4px">
+          <button class="tbtn" id="alT" style="width:auto;flex:1" title="Align top edges">⇡ T</button>
+          <button class="tbtn" id="alVM" style="width:auto;flex:1" title="Align vertical middles">⇕ M</button>
+          <button class="tbtn" id="alB" style="width:auto;flex:1" title="Align bottom edges">B ⇣</button></div>
         <div class="h">All items</div>
         <div class="row"><label>Rotate</label>
           <button class="tbtn" id="pRotL" style="width:auto;flex:1" title="Rotate 90° left">↺ 90°</button>
@@ -1692,6 +1756,8 @@ export function mount(container){
         <button class="tbtn" id="pUngrp">Ungroup</button>
         <button class="tbtn" id="pDup">Duplicate all (Ctrl+D)</button>
         <button class="tbtn danger" id="pDel">Delete all ${n}</button>`;
+      $('#alL').onclick=()=>alignSel('left'); $('#alHC').onclick=()=>alignSel('hcentre'); $('#alR').onclick=()=>alignSel('right');
+      $('#alT').onclick=()=>alignSel('top'); $('#alVM').onclick=()=>alignSel('vmiddle'); $('#alB').onclick=()=>alignSel('bottom');
       $('#pRotL').onclick=()=>rotateSel(-90); $('#pRotR').onclick=()=>rotateSel(90);
       $('#pGrp').onclick=groupSel; $('#pUngrp').onclick=ungroupSel;
       $('#pDup').onclick=duplicate;
@@ -1802,7 +1868,12 @@ export function mount(container){
             <button class="tbtn" id="pRotL" style="width:auto;flex:1" title="Rotate 90° left">↺ 90°</button>
             <button class="tbtn" id="pRotR" style="width:auto;flex:1" title="Rotate 90° right">↻ 90°</button>
             <input class="num" id="pRotN" type="number" value="0" step="5" style="width:52px" title="Rotate by this many degrees"></div>`;
-    h+=`<div style="height:10px"></div><button class="tbtn danger" id="pDel">Delete item</button>`;
+    h+=`<div style="height:10px"></div>
+        <button class="tbtn" id="pDup2">Duplicate (Ctrl+D)</button>
+        <button class="tbtn" id="pStamp" style="border-color:var(--amber);color:var(--amber)">Place copies…</button>`;
+    if(el.type==='text')
+      h+=`<button class="tbtn" id="pStampT">Place copies, new text each</button>`;
+    h+=`<button class="tbtn danger" id="pDel">Delete item</button>`;
     box.innerHTML=h;
 
     // one history entry per editing session, not one per pixel of slider drag
@@ -1847,6 +1918,9 @@ export function mount(container){
     if($('#pRotL')) $('#pRotL').onclick=()=>rotateSel(-90);
     if($('#pRotR')) $('#pRotR').onclick=()=>rotateSel(90);
     if($('#pRotN')) $('#pRotN').onchange=ev=>{ const d=+ev.target.value||0; if(d){rotateSel(d); ev.target.value=0;} };
+    if($('#pDup2')) $('#pDup2').onclick=duplicate;
+    if($('#pStamp')) $('#pStamp').onclick=()=>startStamp(el,false);
+    if($('#pStampT')) $('#pStampT').onclick=()=>startStamp(el,true);
     $('#pDel').onclick=()=>{push();S.els=S.els.filter(x=>x!==el);S.sel=[];render();props();};
     // make sure the populated settings are actually visible (not below the fold)
     try{ card.scrollIntoView({block:'nearest'}); }catch{}
@@ -1968,11 +2042,18 @@ export function mount(container){
       const href=await fileToDataURL(f);
       busy('Inserting image','Placing it on the sheet…');
       const img=await decode(href);
-      const _pr=paperRect();
-      const s=Math.min(_pr.w/img.naturalWidth, _pr.h/img.naturalHeight)*0.9;
-      S.bg={href, w:img.naturalWidth*s, h:img.naturalHeight*s, x:0, y:0, rot:0, skx:0, sky:0};
-      S.bg.w0=S.bg.w; S.bg.h0=S.bg.h;             // remember native aspect for the ratio lock
-      S.bg.x=_pr.x+(_pr.w-S.bg.w)/2; S.bg.y=_pr.y+(_pr.h-S.bg.h)/2;
+      S.bgName = f.name || S.bgName || '';
+      if(S.pendingBg){                              // re-attaching after a restore: keep old position
+        const m=S.pendingBg;
+        S.bg={href, x:m.x, y:m.y, w:m.w, h:m.h, w0:m.w0||m.w, h0:m.h0||m.h, rot:m.rot||0, skx:m.skx||0, sky:m.sky||0};
+        S.pendingBg=null; $('#reattachBar').style.display='none';
+      } else {
+        const _pr=paperRect();
+        const s=Math.min(_pr.w/img.naturalWidth, _pr.h/img.naturalHeight)*0.9;
+        S.bg={href, w:img.naturalWidth*s, h:img.naturalHeight*s, x:0, y:0, rot:0, skx:0, sky:0};
+        S.bg.w0=S.bg.w; S.bg.h0=S.bg.h;
+        S.bg.x=_pr.x+(_pr.w-S.bg.w)/2; S.bg.y=_pr.y+(_pr.h-S.bg.h)/2;
+      }
       S.dirty=true;
       hideToast(); syncBgPanel(); fit(); render();
     }catch(err){ toast(err.message||'Could not load that image.', true); }
@@ -2287,6 +2368,51 @@ export function mount(container){
      — including if you back out of the save dialog itself.
      ---------------------------------------------------------------------- */
   const hasWork = () => S.els.length>0 || !!S.bg;
+
+  /* ---- autosave (crash recovery) ----------------------------------------
+     Geometry only — never the background image pixels, just its filename and
+     position so it can be re-attached in one click. Lives in this browser's
+     local storage, namespaced to Plan Tracer; complements the real .json Save.
+     ---------------------------------------------------------------------- */
+  const AUTO_KEY='planTracer:autosave:v1';
+  function autosaveNow(){
+    if(!S.autosave || !hasWork()) return;
+    try{
+      const bg = S.bg ? {name:S.bgName||'', x:S.bg.x,y:S.bg.y,w:S.bg.w,h:S.bg.h,
+        w0:S.bg.w0,h0:S.bg.h0,rot:S.bg.rot,skx:S.bg.skx,sky:S.bg.sky} : null;
+      localStorage.setItem(AUTO_KEY, JSON.stringify({
+        name:docName(), els:S.els, gridSize:S.gridSize,
+        paperW:PAPER_W, paperH:PAPER_H, paperX:S.paperX, paperY:S.paperY, bg, ts:Date.now()
+      }));
+      const st=$('#autoStatus'); if(st) st.textContent='Backed up at '+new Date().toLocaleTimeString();
+    }catch(e){ const st=$('#autoStatus'); if(st) st.textContent='Backup failed — storage may be full.'; }
+  }
+  function clearAutosave(){ try{ localStorage.removeItem(AUTO_KEY); }catch{} }
+  async function checkRestore(){
+    let d=null; try{ d=JSON.parse(localStorage.getItem(AUTO_KEY)||'null'); }catch{}
+    if(!d || !((d.els&&d.els.length)||d.bg)) return;
+    const when=d.ts?new Date(d.ts).toLocaleString():'a previous session';
+    const a=await ask('Restore your last session?',
+      `A backup of "${d.name||'your plan'}" from ${when} was found. Restore it, or start fresh?`,
+      [{k:'restore',t:'Restore',primary:true},{k:'fresh',t:'Start fresh'}]);
+    if(a!=='restore') return;
+    S.els=d.els||[]; S.gridSize=d.gridSize||S.gridSize;
+    if(d.paperW)PAPER_W=d.paperW; if(d.paperH)PAPER_H=d.paperH;
+    S.paperX=d.paperX||0; S.paperY=d.paperY||0;
+    $('#docName').value=d.name||'Untitled plan';
+    $('#gSize').value=S.gridSize; $('#gPre').value=String(S.gridSize);
+    S.bg=null; S.pendingBg=d.bg||null; S.bgName=d.bg?.name||'';
+    S.sel=[]; S.undo.length=0; S.redo.length=0; S.dirty=false;
+    syncHist(); syncBgPanel(); fit(); render(); props();
+    if(S.pendingBg){
+      $('#reattachName').textContent=S.pendingBg.name||'background image';
+      $('#reattachBar').style.display='';
+    }
+    toast('Session restored.'+(S.pendingBg?' Re-attach the background image to trace over it again.':''));
+  }
+  $('#autoChk').onchange=e=>{ S.autosave=e.target.checked; if(S.autosave) autosaveNow(); };
+  $('#reattachBtn').onclick=()=>$('#fileImg').click();
+
   async function newProject(){
     if(hasWork() && S.dirty){
       const a=await ask('Unsaved changes',
@@ -2297,6 +2423,7 @@ export function mount(container){
     }
     S.els=[]; S.bg=null; S.sel=[]; S.draft=null;
     S.undo.length=0; S.redo.length=0; S.dirty=false;
+    S.pendingBg=null; S.bgName=''; $('#reattachBar').style.display='none'; clearAutosave();
     fileHandle=null;
     $('#docName').value='Untitled plan';
     /* title owned by hub */
@@ -2322,6 +2449,7 @@ export function mount(container){
       try{
         const d=JSON.parse(r.result);
         S.els=d.els||[]; S.bg=d.bg||null; S.sel=[];
+        S.pendingBg=null; $('#reattachBar').style.display='none';
         fileHandle=null;                      // Save should ask again, not overwrite the old file
         S.undo.length=0; S.redo.length=0; S.dirty=false; syncHist();
         // projects saved before names could be hidden: fall back to the current default
@@ -2344,10 +2472,11 @@ export function mount(container){
 
   // the browser's own guard — the only one it will let us use on unload
   _on(window, 'beforeunload',e=>{
+    autosaveNow();                                // final backup before the tab goes
     if(hasWork() && S.dirty){ e.preventDefault(); e.returnValue=''; }
   });
-
-
+  // periodic backup while working (geometry only), cleared on unmount
+  const _autoTimer=setInterval(autosaveNow, 5000);
 
   // ---- startup: draw with whatever is registered, then pull in libraries ----
   refreshCategories();
@@ -2355,6 +2484,7 @@ export function mount(container){
   $$('.wt')[1]?.classList.add('on');
   $('.symbtn')?.classList.add('on');
   syncModes(); syncHist(); syncBgPanel(); setTool('line'); fit(); render();
+  checkRestore();                                 // offer to recover a previous session
 
   ensureLibraries()
     .then(() => {
@@ -2364,12 +2494,13 @@ export function mount(container){
     })
     .catch(() => toast('Could not load symbol libraries — using the built-in set.', true));
 
-  _active = { container, listeners: _listeners, themeObs: _themeObs };
+  _active = { container, listeners: _listeners, themeObs: _themeObs, autoTimer: _autoTimer };
 }
 
 export function unmount(){
   if(!_active) return;
   _active.themeObs?.disconnect();
+  try{ clearInterval(_active.autoTimer); }catch{}
   for(const [t, ev, fn, opt] of _active.listeners) t.removeEventListener(ev, fn, opt);
   try{ clearTimeout(_toastHandle); }catch{}
   _active.container.innerHTML = '';
@@ -2568,8 +2699,19 @@ const TEMPLATE = `<!-- ============ HEADER 1 : FILE ============ -->
         <button class="tbtn" id="bgReset">Reset adjustments</button>
       </div>
       <div class="muted" id="bgHint">Upload or drag in a plan, then unlock to move it or drag the teal handles to scale and rotate.</div>
+      <div id="reattachBar" style="display:none;margin-top:8px;padding:8px;border:1px solid var(--amber);border-radius:6px;background:var(--amber-dim)">
+        <div class="muted" style="color:var(--text)">Restored session needs its background re-attached:<br><b id="reattachName"></b></div>
+        <div style="height:6px"></div>
+        <button class="tbtn" id="reattachBtn" style="border-color:var(--amber);color:var(--amber)">Re-attach image…</button>
+      </div>
       <div style="height:8px"></div>
       <button class="tbtn danger" id="btnImgDel">Remove image</button>
+    </section>
+
+    <section class="card">
+      <div class="h">Backup</div>
+      <label class="chk"><input type="checkbox" id="autoChk" checked> Autosave (recover after a crash)</label>
+      <div class="muted" id="autoStatus">Keeps a local backup of your drawing (not the image) so you can recover it if the tab closes.</div>
     </section>
 
     <section class="card">
