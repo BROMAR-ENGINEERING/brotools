@@ -229,5 +229,8 @@
 
 
 .tool-plan-tracer #paper{stroke:var(--line);stroke-width:1;vector-effect:non-scaling-stroke}
+.tool-plan-tracer .barchk{display:flex;align-items:center;gap:5px;font-size:12px;color:var(--text);
+  white-space:nowrap;cursor:pointer;padding:0 4px}
+.tool-plan-tracer .barchk input{accent-color:var(--accent);width:auto;cursor:pointer}
 .tool-plan-tracer .tbx{padding:5px 0;text-align:center;font-size:12px}
 .tool-plan-tracer .tbx.on{background:var(--amber-dim);border-color:var(--amber);color:var(--amber)}
