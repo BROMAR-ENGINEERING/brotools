@@ -117,7 +117,7 @@ export function mount(container){
     textSize:16, textFont:'sans', textAlign:'start', textBold:false, textItalic:false,
     draft:null, sel:[], snapHit:null, snapKind:null, joinA:null, dirty:false,
     viewLock:false, marquee:null, segSel:null, stamp:null,
-    autosave:true, pendingBg:null, bgName:'',
+    autosave:false, pendingBg:null, bgName:'',
     paperX:0, paperY:0,
     view:{x:0,y:0,w:PAPER_W,h:PAPER_H}, undo:[], redo:[]
   };
@@ -243,6 +243,7 @@ export function mount(container){
     ['fillet','Fillet',`<path d="M3 14V8a5 5 0 0 1 5-5h6"/><path d="M3 3h5M3 3v5" opacity=".35"/>`],
     ['chamfer','Chamfer',`<path d="M3 14V9l6-6h5"/><path d="M3 3h6M3 3v6" opacity=".35"/>`],
     ['join','Join',`<path d="M2 8h4M10 8h4"/><circle cx="6" cy="8" r="2"/><circle cx="10" cy="8" r="2"/><path d="M8 3v2M8 11v2" opacity=".4"/>`],
+    ['break','Break',`<path d="M2 8h4M10 8h4"/><path d="M6 4l-1 4 2 0-1 4" opacity=".9"/><path d="M10 4l-1 4 2 0-1 4" opacity=".9"/>`],
     ['symbol','Symbol',`<circle cx="8" cy="8" r="6"/><path d="M4 4l8 8M4 12l8-8"/>`],
     ['text','Text',`<path d="M3 4h10M8 4v9"/>`]
   ];
@@ -271,6 +272,7 @@ export function mount(container){
       fillet:'Click a corner to round it off · set the radius above',
       chamfer:'Click a corner to cut it off · set the setback above',
       join:'Click the point to keep, then the point to bring onto it',
+      break:'Click a point on a line to split it into two separate lines there',
       symbol:'Click on the plan to place the selected symbol',
       text:'Click to place a text label', pan:'Drag to pan · scroll to zoom'};
     $('#hint').textContent=H[t]||''; render(); props();
@@ -310,11 +312,20 @@ export function mount(container){
     if(S.sel.length){ push(); S.sel.forEach(el=>{ if(el.weight!==undefined) el.weight=S.weight; }); render(); }
   });
   $('#swatches').innerHTML = COLORS.map(c=>`<button class="sw" data-c="${c}" style="background:${c}"></button>`).join('');
-  $$('.sw').forEach(b=>b.onclick=()=>{
-    S.color=b.dataset.c;
-    $$('.sw').forEach(x=>x.classList.toggle('on',x===b));
-    if(S.sel.length){ push(); S.sel.forEach(el=>el.color=S.color); render(); }
-  });
+  function applyColor(c){
+    S.color=c;
+    $$('.sw').forEach(x=>x.classList.toggle('on', x.dataset.c===c));
+    if(S.sel.length){ push(); S.sel.forEach(el=>el.color=c); render(); }
+  }
+  $('#swatches').querySelectorAll('.sw').forEach(b=>b.onclick=()=>applyColor(b.dataset.c));
+  // "More colours" → native picker; the chosen colour becomes a reusable custom swatch
+  $('#btnMoreCol').onclick=()=>{ const p=$('#colPick'); p.value=/^#[0-9a-f]{6}$/i.test(S.color)?S.color:'#888888'; p.click(); };
+  $('#colPick').oninput=e=>{
+    const c=e.target.value, sw=$('#swCustom');
+    sw.style.display=''; sw.style.background=c; sw.dataset.c=c;
+    sw.onclick=()=>applyColor(c);
+    applyColor(c);
+  };
   $('#dash').onchange=e=>{
     S.dash=e.target.value;
     if(S.sel.length){ push(); S.sel.forEach(el=>{ if(el.weight!==undefined) el.dash=S.dash; }); render(); }
@@ -1080,6 +1091,35 @@ export function mount(container){
   // rectangle's shared corner together without touching other lines)
   function coincidentIn(el,v){ return el.pts.filter(q=>sameKey(q,v)); }
 
+  // split a polyline at point p on segment i → two separate lines meeting at p
+  function breakAt(el,i,p){
+    push();
+    const pts=el.pts;
+    const closed = pts.length>2 && sameKey(pts[0],pts.at(-1));
+    const cut={x:p.x,y:p.y};
+    let made;
+    if(closed){
+      const verts=pts.slice(0,-1), m=verts.length;   // reopen the loop at the cut point
+      const seq=[cut];
+      for(let j=1;j<=m;j++) seq.push(verts[(i+j)%m]);
+      seq.push(cut);
+      made=[seq];
+    } else {
+      const left=[...pts.slice(0,i+1), cut];
+      const right=[cut, ...pts.slice(i+1)];
+      made=[left,right].filter(s=>s.length>=2);
+    }
+    const idx=S.els.indexOf(el);
+    const parts=made.map(seq=>{
+      const c=JSON.parse(JSON.stringify(el));
+      c.id=uid(); c.pts=seq.map(q=>({x:q.x,y:q.y})); delete c.corners; delete c.grp;
+      return c;
+    });
+    S.els.splice(idx,1,...parts);
+    S.sel=parts; S.segSel=null; render(); props();
+    toast(closed?'Loop opened at the break point.':'Line split into two at the break point.');
+  }
+
   function deleteSegment(el,i){
     push();
     const pts=el.pts;
@@ -1190,6 +1230,18 @@ export function mount(container){
       h.q.x=S.joinA.x; h.q.y=S.joinA.y;          // the second point moves onto the first
       S.joinA=null; render();
       toast('Joined. Group the two lines if you want the joint to hold when you move them.');
+      return;
+    }
+    if(S.tool==='break'){
+      const s=nearestPolySeg(raw, 8*scale());
+      if(!s){ toast('Click on a line to break it there.',true); return; }
+      // project the click onto the segment so the break sits exactly on the line
+      const a=s.el.pts[s.i], b=s.el.pts[s.i+1];
+      const vx=b.x-a.x, vy=b.y-a.y, L2=vx*vx+vy*vy||1;
+      let t=((raw.x-a.x)*vx+(raw.y-a.y)*vy)/L2; t=Math.max(0,Math.min(1,t));
+      let p={x:a.x+vx*t, y:a.y+vy*t};
+      const {p:sp}=snap(raw); if(Math.hypot(sp.x-p.x,sp.y-p.y)<8*scale()) p=sp;  // honour snap if close
+      breakAt(s.el, s.i, p);
       return;
     }
     if(S.tool==='arctan'){
@@ -2371,7 +2423,7 @@ export function mount(container){
   let fileHandle=null;
   async function saveProject(forceDialog){
     const blob=new Blob(
-      [JSON.stringify({name:docName(),els:S.els,bg:S.bg,gridSize:S.gridSize,paperW:PAPER_W,paperH:PAPER_H,paperX:S.paperX,paperY:S.paperY})],
+      [JSON.stringify({name:docName(),els:S.els,bg:S.bg,gridSize:S.gridSize,paperW:PAPER_W,paperH:PAPER_H,paperX:S.paperX,paperY:S.paperY,autosave:S.autosave})],
       {type:'application/json'});
     const h=await saveAs(safeName()+'.json', blob, 'application/json', '.json',
       'Plan Tracer project', forceDialog?null:fileHandle);
@@ -2476,6 +2528,7 @@ export function mount(container){
         if(d.name){ $('#docName').value=d.name; /* title owned by hub */ }
         if(d.gridSize){S.gridSize=d.gridSize;$('#gSize').value=d.gridSize;$('#gPre').value=String(d.gridSize);}
         if(d.paperW) PAPER_W=d.paperW; if(d.paperH) PAPER_H=d.paperH;
+        S.autosave=!!d.autosave; const ac=$('#autoChk'); if(ac) ac.checked=S.autosave;
         S.paperX=d.paperX||0; S.paperY=d.paperY||0;
         syncBgPanel(); fit(); render(); props();
       }catch{ toast('That file is not a Plan Tracer project.',true); }
@@ -2537,6 +2590,7 @@ const TEMPLATE = `<!-- ============ HEADER 1 : FILE ============ -->
   <button class="tbtn" id="btnOpen" title="Open a project">Open</button>
   <button class="tbtn" id="btnSave" title="Save (Ctrl+S)">Save</button>
   <button class="tbtn" id="btnSaveAs" title="Save as… (Ctrl+Shift+S)">Save as…</button>
+  <label class="barchk" title="Keep a local backup of this drawing (not the image) to recover after a crash. Saved with the project."><input type="checkbox" id="autoChk"> Autosave</label>
   <div class="sep"></div>
   <button class="tbtn" id="btnImg">Upload image</button>
   <button class="tbtn" id="btnUndo" title="Undo (Ctrl+Z)">↶</button>
@@ -2629,6 +2683,10 @@ const TEMPLATE = `<!-- ============ HEADER 1 : FILE ============ -->
     <span class="cap">Colour &amp; style</span>
     <div class="grp" id="swatches"></div>
     <div class="grp">
+      <button class="sw" id="swCustom" title="Custom colour" style="display:none"></button>
+      <button class="tool" id="btnMoreCol" title="More colours — pick any colour">
+        <svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="6"/><path d="M8 2v12M2 8h12M4 4l8 8M12 4l-8 8" opacity=".45"/></svg>+</button>
+      <input type="color" id="colPick" style="position:absolute;width:0;height:0;opacity:0;pointer-events:none">
       <select class="num" id="dash" title="Line style" style="width:86px">
         <option value="solid">Solid</option>
         <option value="dashed">Dashed</option>
@@ -2728,8 +2786,7 @@ const TEMPLATE = `<!-- ============ HEADER 1 : FILE ============ -->
 
     <section class="card">
       <div class="h">Backup</div>
-      <label class="chk"><input type="checkbox" id="autoChk" checked> Autosave (recover after a crash)</label>
-      <div class="muted" id="autoStatus">Keeps a local backup of your drawing (not the image) so you can recover it if the tab closes.</div>
+      <div class="muted" id="autoStatus">Turn on <b>Autosave</b> (next to Save) to keep a local backup of this drawing — not the image — so you can recover it if the tab closes. The setting is saved with the project.</div>
     </section>
 
     <section class="card">
